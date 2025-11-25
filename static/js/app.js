@@ -67,13 +67,13 @@ function updateUIForAuth() {
     el.style.display = isLoggedIn ? 'none' : '';
   });
   
-  // Update auth indicator
+  // Update auth indicator - no emoji
   const indicator = document.getElementById('auth-indicator');
   if (isLoggedIn) {
-    indicator.innerHTML = '🟢 Admin';
+    indicator.innerHTML = 'Admin Mode';
     indicator.style.color = '#2ed573';
   } else {
-    indicator.innerHTML = '👁️ View Only';
+    indicator.innerHTML = 'View Only';
     indicator.style.color = 'rgba(240, 230, 255, 0.6)';
   }
 }
@@ -182,20 +182,23 @@ function renderGames(games) {
     el.querySelector('.game-status').textContent = game.status || '';
     el.querySelector('.game-status').className = `game-status badge status-${(game.status || '').toLowerCase()}`;
     
-    // Rating stars
+    // Update card row: Hours on left, rating on right
+    const cardRow = el.querySelector('.card-row');
+    
+    // Hours played - moved to left
+    const hours = el.querySelector('.game-hours');
+    if (game.hours_played) {
+      hours.textContent = `Time: ${game.hours_played}h`;
+    } else {
+      hours.textContent = 'Time: 0h';
+    }
+    
+    // Rating stars - moved to right
     const rating = el.querySelector('.game-rating');
     if (game.rating) {
       rating.textContent = '★'.repeat(game.rating) + '☆'.repeat(5 - game.rating);
     } else {
       rating.textContent = '☆☆☆☆☆';
-    }
-    
-    // Hours played
-    const hours = el.querySelector('.game-hours');
-    if (game.hours_played) {
-      hours.textContent = `⏱️ ${game.hours_played}h`;
-    } else {
-      hours.textContent = '⏱️ 0h';
     }
     
     // Tags
@@ -219,7 +222,7 @@ function renderGames(games) {
       progressBar.className = 'achievement-progress-mini';
       progressBar.innerHTML = `
         <div class="progress-info">
-          <span>🏆 ${unlocked}/${total}</span>
+          <span>Achievements: ${unlocked}/${total}</span>
           <span>${percentage}%</span>
         </div>
         <div class="progress-bar-mini">
@@ -242,11 +245,19 @@ function renderGames(games) {
     if (isLoggedIn) {
       const editBtn = el.querySelector('.edit');
       const deleteBtn = el.querySelector('.delete');
+      const updateBtn = el.querySelector('.update-steam');
+      
       if (editBtn && deleteBtn) {
         editBtn.style.display = '';
         deleteBtn.style.display = '';
         editBtn.addEventListener('click', () => editGame(game));
         deleteBtn.addEventListener('click', () => deleteGame(game.id));
+      }
+      
+      // Update Steam button - only show for Steam games
+      if (updateBtn && game.steam_app_id) {
+        updateBtn.style.display = '';
+        updateBtn.addEventListener('click', () => updateGameFromSteam(game.id));
       }
       
       // Favorite button
@@ -261,6 +272,65 @@ function renderGames(games) {
     list.appendChild(el);
   });
 }
+
+// Update single game from Steam
+async function updateGameFromSteam(gameId) {
+  if (!isLoggedIn) {
+    alert('Please login to update games');
+    return;
+  }
+  
+  if (!confirm('Update this game from Steam? This will refresh hours played only - achievements will NOT be updated.')) return;
+  
+  try {
+    const res = await fetch(`/api/steam/update-game/${gameId}`, { method: 'POST' });
+    const result = await res.json();
+    
+    if (result.success) {
+      let message = `Updated game hours from Steam`;
+      if (result.hours_updated) message += ' - hours refreshed';
+      alert(message);
+      fetchGames();
+    } else {
+      alert('Failed to update game: ' + result.error);
+    }
+  } catch (err) {
+    alert('Error updating game: ' + err.message);
+  }
+}
+
+// Update all games from Steam
+document.getElementById('update-all-steam')?.addEventListener('click', async () => {
+  if (!isLoggedIn) {
+    alert('Please login to update games');
+    return;
+  }
+  
+  if (!confirm('Update ALL Steam games? This will refresh hours played only - achievements will NOT be updated.')) return;
+  
+  const btn = document.getElementById('update-all-steam');
+  const originalText = btn.textContent;
+  btn.textContent = 'Updating...';
+  btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/steam/update-all-games', { method: 'POST' });
+    const result = await res.json();
+    
+    if (result.success) {
+      let message = `Updated hours for ${result.hours_updated} games from Steam`;
+      alert(message);
+      fetchGames();
+    } else {
+      alert('Failed to update games: ' + result.error);
+    }
+  } catch (err) {
+    alert('Error updating games: ' + err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});
 
 // Sorting and filtering functionality
 document.getElementById('sort-by').addEventListener('change', (e) => {
@@ -686,7 +756,14 @@ async function openAchievements(game) {
   
   achPane.innerHTML = `
     <div class="achievement-header">
-      <h2>🏆 ${game.title}</h2>
+      <div class="game-info-header">
+        <h2>${game.title}</h2>
+        <div class="game-meta-row">
+          <span class="game-hours">${game.hours_played ? `${game.hours_played}h` : '0h'}</span>
+          <span class="game-status badge status-${(game.status || '').toLowerCase()}">${game.status || ''}</span>
+          <span class="game-rating">${game.rating ? '★'.repeat(game.rating) + '☆'.repeat(5 - game.rating) : '☆☆☆☆☆'}</span>
+        </div>
+      </div>
       <div class="achievement-actions">
         ${addBtnHtml}
         ${importBtnHtml}
@@ -813,6 +890,7 @@ async function loadAchievements(gameId) {
   if (achievements.length === 0) {
     list.innerHTML = '<div class="empty-state">No achievements yet</div>';
     document.getElementById('ach-progress-text').textContent = '0 / 0 (0%)';
+    document.getElementById('ach-progress-fill').style.width = '0%';
     return;
   }
   
@@ -821,9 +899,19 @@ async function loadAchievements(gameId) {
   const total = achievements.length;
   const percentage = Math.round((unlocked / total) * 100);
   
-  // Update progress bar
-  document.getElementById('ach-progress-fill').style.width = percentage + '%';
-  document.getElementById('ach-progress-text').textContent = `${unlocked} / ${total} (${percentage}%)`;
+  // Update progress bar with animation
+  const progressFill = document.getElementById('ach-progress-fill');
+  const progressText = document.getElementById('ach-progress-text');
+  
+  // Reset to 0 then animate to target percentage
+  progressFill.style.width = '0%';
+  progressText.textContent = '0 / 0 (0%)';
+  
+  // Use setTimeout to ensure the reset is rendered before animation
+  setTimeout(() => {
+    progressFill.style.width = percentage + '%';
+    progressText.textContent = `${unlocked} / ${total} (${percentage}%)`;
+  }, 50);
   
   const actionsHtml = isLoggedIn ? `
     <div class="ach-actions">
@@ -834,15 +922,19 @@ async function loadAchievements(gameId) {
     </div>
   ` : '';
   
-  list.innerHTML = achievements.map(ach => {
+  list.innerHTML = achievements.map((ach, index) => {
     const actions = actionsHtml
       .replace(/ACH_ID/g, ach.id)
       .replace(/GAME_ID/g, gameId)
       .replace('UNLOCKED', ach.unlocked)
       .replace('TOGGLE_ICON', ach.unlocked ? '✓' : '○');
     
+    // Add staggered animation delay based on index
+    const animationDelay = 0.1 + (index * 0.05);
+    
     return `
-      <div class="achievement-card ${ach.unlocked ? 'unlocked' : 'locked'}">
+      <div class="achievement-card ${ach.unlocked ? 'unlocked' : 'locked'}" 
+           style="animation-delay: ${animationDelay}s">
         ${ach.icon_url ? `<img src="${ach.icon_url}" class="ach-icon" />` : ''}
         <div class="ach-content">
           <div class="ach-title">${ach.title}</div>
@@ -862,13 +954,18 @@ async function loadAchievements(gameId) {
         const gameId = btn.dataset.game;
         const unlocked = btn.dataset.unlocked === '1' ? 0 : 1;
         
+        // Add loading state
+        btn.disabled = true;
+        btn.innerHTML = '⏳';
+        
         await fetch(`/api/games/${gameId}/achievements/${achId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ unlocked })
         });
         
-        loadAchievements(gameId);
+        // Reload achievements with animation
+        await loadAchievements(gameId);
       });
     });
     
@@ -880,11 +977,16 @@ async function loadAchievements(gameId) {
         const achId = btn.dataset.id;
         const gameId = btn.dataset.game;
         
+        // Add loading state
+        btn.disabled = true;
+        btn.innerHTML = '⏳';
+        
         await fetch(`/api/games/${gameId}/achievements/${achId}`, {
           method: 'DELETE'
         });
         
-        loadAchievements(gameId);
+        // Reload achievements with animation
+        await loadAchievements(gameId);
       });
     });
   }
@@ -931,7 +1033,7 @@ async function loadStats() {
     platformBreakdown.innerHTML = '<div class="empty-state">No platform data</div>';
   }
   
-  // Recent completions
+  // Recent completions with game info layout
   const recentCompletions = document.getElementById('recent-completions');
   if (stats.recent_completions && stats.recent_completions.length > 0) {
     recentCompletions.innerHTML = stats.recent_completions.map(game => `
@@ -939,6 +1041,10 @@ async function loadStats() {
         ${game.cover_url ? `<img src="${game.cover_url}" class="completion-cover" />` : ''}
         <div class="completion-info">
           <div class="completion-title">${game.title}</div>
+          <div class="completion-meta">
+            <span class="completion-hours">${game.hours_played ? `${game.hours_played}h` : '0h'}</span>
+            <span class="completion-rating">${game.rating ? '★'.repeat(game.rating) + '☆'.repeat(5 - game.rating) : '☆☆☆☆☆'}</span>
+          </div>
           <div class="completion-date">📅 ${game.completion_date}</div>
         </div>
       </div>
@@ -985,7 +1091,7 @@ document.getElementById('import-steam-library').addEventListener('click', async 
     return;
   }
   
-  const importAchievements = document.getElementById('import-achievements').checked;
+  const importAchievements = False;
   
   let confirmMessage = 'Import your Steam library? This will add all games from your Steam account.';
   if (importAchievements) {

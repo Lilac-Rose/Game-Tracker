@@ -983,20 +983,157 @@ def steam_game_details(app_id):
     details = get_steam_game_details(app_id)
     return jsonify(details)
 
+@app.route('/api/steam/update-game/<int:game_id>', methods=['POST'])
+def update_game_from_steam(game_id):
+    """Update a single game's data from Steam (hours only, no achievements by default)"""
+    if not session.get('logged_in'):
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if not STEAM_API_KEY:
+        return jsonify({'error': 'Steam API not configured'}), 400
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get the game
+        cur.execute('SELECT steam_app_id, title FROM games WHERE id=?', (game_id,))
+        game = cur.fetchone()
+        
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+        
+        app_id = game['steam_app_id']
+        if not app_id:
+            return jsonify({'error': 'Game has no Steam App ID'}), 400
+        
+        print(f"Updating game {game['title']} (AppID: {app_id}) from Steam...")
+        
+        # Get updated hours played
+        hours_played = None
+        if STEAM_USER_ID:
+            games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={STEAM_USER_ID}&include_appinfo=1"
+            games_response = steam_api_call_with_rate_limit(games_url)
+            
+            if games_response.status_code == 200:
+                games_data = games_response.json()
+                for steam_game in games_data.get('response', {}).get('games', []):
+                    if steam_game.get('appid') == app_id:
+                        playtime_minutes = steam_game.get('playtime_forever', 0)
+                        hours_played = round(playtime_minutes / 60, 1) if playtime_minutes > 0 else None
+                        break
+        
+        # Update the game
+        if hours_played is not None:
+            cur.execute('UPDATE games SET hours_played=? WHERE id=?', (hours_played, game_id))
+            print(f"  → Updated hours: {hours_played}h")
+        
+        # REMOVED achievement updating - achievements should be handled individually
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'hours_updated': hours_played is not None,
+            'message': f'Updated {game["title"]} hours from Steam'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Update failed: {str(e)}'}), 500
+
+@app.route('/api/steam/update-all-games', methods=['POST'])
+def update_all_games_from_steam():
+    """Update all Steam games with current data (hours only, no achievements)"""
+    if not session.get('logged_in'):
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if not STEAM_API_KEY or not STEAM_USER_ID:
+        return jsonify({'error': 'Steam API not configured'}), 400
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get all Steam games
+        cur.execute('SELECT id, title, steam_app_id FROM games WHERE steam_app_id IS NOT NULL')
+        steam_games = cur.fetchall()
+        
+        if not steam_games:
+            return jsonify({'error': 'No Steam games found'}), 400
+        
+        print(f"Updating {len(steam_games)} games from Steam (hours only)...")
+        
+        # Get current Steam library data
+        games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={STEAM_USER_ID}&include_appinfo=1"
+        games_response = steam_api_call_with_rate_limit(games_url)
+        
+        if games_response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch Steam library'}), 400
+        
+        games_data = games_response.json()
+        steam_library = {game['appid']: game for game in games_data.get('response', {}).get('games', [])}
+        
+        updated_count = 0
+        hours_updated = 0
+        
+        for i, game in enumerate(steam_games):
+            app_id = game['steam_app_id']
+            steam_game = steam_library.get(app_id)
+            
+            if not steam_game:
+                continue
+            
+            # Update hours played only
+            playtime_minutes = steam_game.get('playtime_forever', 0)
+            hours_played = round(playtime_minutes / 60, 1) if playtime_minutes > 0 else None
+            
+            if hours_played is not None:
+                cur.execute('UPDATE games SET hours_played=? WHERE id=?', (hours_played, game['id']))
+                hours_updated += 1
+                print(f"Updated {game['title']}: {hours_played}h")
+            
+            updated_count += 1
+            
+            # Small delay to avoid rate limiting
+            if i < len(steam_games) - 1:
+                time.sleep(0.5)  # Reduced delay since we're only getting hours
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'games_updated': updated_count,
+            'hours_updated': hours_updated,
+            'message': f'Updated hours for {hours_updated} games from Steam'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Update failed: {str(e)}'}), 500
+
 @app.route('/api/stats')
 def api_stats():
     conn = get_db()
     cur = conn.cursor()
     
+    # Total games
     cur.execute('SELECT COUNT(*) as total FROM games')
     total = cur.fetchone()['total']
     
+    # Completed games
     cur.execute("SELECT COUNT(*) as completed FROM games WHERE status='Completed'")
     completed = cur.fetchone()['completed']
     
+    # Total hours played
     cur.execute('SELECT SUM(hours_played) as total_hours FROM games')
     total_hours = cur.fetchone()['total_hours'] or 0
     
+    # Achievement stats
     cur.execute('SELECT COUNT(*) as total_achievements FROM achievements WHERE unlocked=1')
     achievements_unlocked = cur.fetchone()['total_achievements']
     
@@ -1021,12 +1158,12 @@ def api_stats():
     ''')
     achievement_progress = [dict(r) for r in cur.fetchall()]
     
-    # Rest of your stats code remains the same...
     # Get status breakdown
     cur.execute('''
         SELECT status, COUNT(*) as count FROM games 
         WHERE status IS NOT NULL AND status != ''
         GROUP BY status
+        ORDER BY count DESC
     ''')
     status_breakdown = {row['status']: row['count'] for row in cur.fetchall()}
     
@@ -1035,30 +1172,72 @@ def api_stats():
         SELECT platform, COUNT(*) as count FROM games 
         WHERE platform IS NOT NULL AND platform != ''
         GROUP BY platform
+        ORDER BY count DESC
     ''')
     platform_breakdown = {row['platform']: row['count'] for row in cur.fetchall()}
     
-    # Get recent completions
+    # Get recent completions with hours and rating
     cur.execute('''
-        SELECT id, title, cover_url, completion_date FROM games 
+        SELECT id, title, cover_url, completion_date, hours_played, rating 
+        FROM games 
         WHERE status='Completed' AND completion_date IS NOT NULL
         ORDER BY completion_date DESC
         LIMIT 5
     ''')
     recent_completions = [dict(r) for r in cur.fetchall()]
     
+    # Additional stats you might want to add:
+    
+    # Average rating
+    cur.execute('SELECT AVG(rating) as avg_rating FROM games WHERE rating IS NOT NULL')
+    avg_rating = cur.fetchone()['avg_rating']
+    
+    # Most played game
+    cur.execute('''
+        SELECT title, hours_played 
+        FROM games 
+        WHERE hours_played IS NOT NULL AND hours_played > 0
+        ORDER BY hours_played DESC 
+        LIMIT 1
+    ''')
+    most_played = cur.fetchone()
+    
+    # Games by rating distribution
+    cur.execute('''
+        SELECT 
+            SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END) as five_star,
+            SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END) as four_star,
+            SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END) as three_star,
+            SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END) as two_star,
+            SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) as one_star,
+            SUM(CASE WHEN rating IS NULL THEN 1 ELSE 0 END) as unrated
+        FROM games
+    ''')
+    rating_distribution = dict(cur.fetchone())
+    
+    # Completion rate
+    completion_rate = round((completed / total * 100), 1) if total > 0 else 0
+    
+    # Average hours per game
+    avg_hours_per_game = round(total_hours / total, 1) if total > 0 else 0
+    
     conn.close()
     
     return jsonify({
         'total_games': total,
         'completed_games': completed,
+        'completion_rate': completion_rate,
         'total_hours': round(total_hours, 1),
+        'avg_hours_per_game': avg_hours_per_game,
         'achievements_unlocked': achievements_unlocked,
         'achievements_total': achievements_total,
         'achievement_progress': achievement_progress,
         'status_breakdown': status_breakdown,
         'platform_breakdown': platform_breakdown,
-        'recent_completions': recent_completions
+        'recent_completions': recent_completions,
+        'avg_rating': round(avg_rating, 1) if avg_rating else 0,
+        'most_played': dict(most_played) if most_played else None,
+        'rating_distribution': rating_distribution
     })
 
 @app.route('/api/games/<int:game_id>/completionist', methods=['GET', 'POST'])

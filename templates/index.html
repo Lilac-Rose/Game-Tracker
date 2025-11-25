@@ -9,14 +9,14 @@
 <body>
   <div class="app">
     <aside class="sidebar">
-      <div class="brand">🎮 GameTracker</div>
+      <div class="brand">GameTracker</div>
       <nav>
-        <button class="nav-btn active" data-tab="games">📚 Games</button>
-        <button class="nav-btn" data-tab="stats">📊 Statistics</button>
-        <button class="nav-btn" data-tab="achievements">🏆 Achievements</button>
-        <button class="nav-btn" data-tab="completionist">🎯 Completionist</button>
-        <button class="nav-btn" data-tab="challenges">🎪 All Challenges</button>
-        <button class="nav-btn" data-tab="import">💾 Import/Export</button>
+        <button class="nav-btn active" data-tab="games">Games Library</button>
+        <button class="nav-btn" data-tab="stats">Statistics</button>
+        <button class="nav-btn" data-tab="achievements">Achievements</button>
+        <button class="nav-btn" data-tab="completionist">Completionist</button>
+        <button class="nav-btn" data-tab="challenges">All Challenges</button>
+        <button class="nav-btn" data-tab="import">Import/Export</button>
       </nav>
       <div class="sidebar-footer">
         <div class="auth-status">
@@ -29,6 +29,8 @@
     <main class="main">
       <header class="topbar">
         <input id="search" placeholder="Search games..." />
+        
+        <!-- Sorting dropdown -->
         <select id="sort-by">
           <option value="recent">Recently Added</option>
           <option value="title">Title A-Z</option>
@@ -40,6 +42,7 @@
           <option value="status">Status</option>
           <option value="platform">Platform</option>
         </select>
+        
         <select id="filter-status">
           <option value="">All Status</option>
           <option value="Playing">Playing</option>
@@ -56,19 +59,17 @@
           <option value="Nintendo Switch">Nintendo Switch</option>
           <option value="Mobile">Mobile</option>
         </select>
-        <button id="add-game" class="admin-only" style="display: none;">+ Add Game</button>
-        <button id="import-steam-library" class="admin-only" style="display: none;">📥 Import Steam</button>
-
-        <!-- Achievement import toggle -->
-        <label class="import-option">
-          <input type="checkbox" id="import-achievements" checked />
-          Import achievements
-        </label>
+        
+        <button id="add-game" class="admin-only" style="display: none;">Add Game</button>
+        <button id="import-steam-library" class="admin-only" style="display: none;">Import Steam</button>
+        
+        <!-- Update buttons -->
+        <button id="update-all-steam" class="admin-only" style="display: none;">Update All from Steam</button>
         
         <!-- Login controls (guest only) -->
         <div id="login-controls" class="guest-only" style="display: flex; gap: 8px;">
           <input type="password" id="password-input" placeholder="Password" style="width: 150px;" />
-          <button id="login-btn">🔓 Unlock</button>
+          <button id="login-btn">Unlock</button>
         </div>
         
         <!-- Logout button (admin only) -->
@@ -104,7 +105,7 @@
           </div>
           
           <div class="stats-section">
-            <h3>Achievement Progress</h3>
+            <h3></h3>
             <div id="achievement-progress-list"></div>
           </div>
           
@@ -175,16 +176,17 @@
           <p class="game-notes"></p>
           <div class="game-tags"></div>
           <div class="card-row">
+            <span class="game-hours"></span>
             <span class="game-status badge"></span>
             <span class="game-rating"></span>
           </div>
-          <div class="game-hours"></div>
         </div>
         <div class="card-actions">
-          <button class="btn small edit admin-only" style="display: none;" title="Edit">✏️ Edit</button>
-          <button class="btn small delete admin-only" style="display: none;" title="Delete">🗑️ Delete</button>
-          <button class="btn small ach" title="Achievements">🏆 View</button>
-          <button class="btn small comp" title="Completionist">🎯 Challenges</button>
+          <button class="btn small edit admin-only" style="display: none;" title="Edit">Edit</button>
+          <button class="btn small update-steam admin-only" style="display: none;" title="Update from Steam">Update</button>
+          <button class="btn small delete admin-only" style="display: none;" title="Delete">Delete</button>
+          <button class="btn small ach" title="Achievements">Achievements</button>
+          <button class="btn small comp" title="Completionist">Challenges</button>
         </div>
       </div>
     </div>
