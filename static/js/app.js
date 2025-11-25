@@ -2,6 +2,12 @@
 let allGames = [];
 let currentEditId = null;
 let isLoggedIn = false;
+let currentSort = 'recent';
+let currentFilters = {
+  status: '',
+  platform: '',
+  search: ''
+};
 
 // Check authentication status
 async function checkAuth() {
@@ -95,7 +101,6 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.getElementById('tab-' + tab).classList.add('active');
     
     if (tab === 'stats') loadStats();
-    if (tab === 'challenges') loadAllChallenges();
   });
 });
 
@@ -103,7 +108,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 async function fetchGames() {
   const res = await fetch('/api/games');
   allGames = await res.json();
-  renderGames(allGames);
+  applySortingAndFiltering();
 }
 
 function renderGames(games) {
@@ -125,8 +130,21 @@ function renderGames(games) {
       cover.style.backgroundImage = `url(${game.cover_url})`;
     }
     
-    el.querySelector('.game-title').textContent = game.title;
-    el.querySelector('.game-platform').textContent = game.platform || '';
+    // Update card head to include favorite star
+    const cardHead = el.querySelector('.card-head');
+    cardHead.innerHTML = `
+      <div class="game-title-wrapper">
+        ${isLoggedIn ? `
+          <button class="favorite-star ${game.is_favorite ? 'favorited' : ''}" 
+                  data-id="${game.id}" title="${game.is_favorite ? 'Remove from favorites' : 'Add to favorites'}">
+            ${game.is_favorite ? '⭐' : '☆'}
+          </button>
+        ` : ''}
+        <strong class="game-title">${game.title}</strong>
+      </div>
+      <span class="game-platform badge">${game.platform || ''}</span>
+    `;
+    
     el.querySelector('.game-notes').textContent = game.notes || '';
     el.querySelector('.game-status').textContent = game.status || '';
     el.querySelector('.game-status').className = `game-status badge status-${(game.status || '').toLowerCase()}`;
@@ -135,12 +153,16 @@ function renderGames(games) {
     const rating = el.querySelector('.game-rating');
     if (game.rating) {
       rating.textContent = '★'.repeat(game.rating) + '☆'.repeat(5 - game.rating);
+    } else {
+      rating.textContent = '☆☆☆☆☆';
     }
     
     // Hours played
     const hours = el.querySelector('.game-hours');
     if (game.hours_played) {
       hours.textContent = `⏱️ ${game.hours_played}h`;
+    } else {
+      hours.textContent = '⏱️ 0h';
     }
     
     // Tags
@@ -151,7 +173,7 @@ function renderGames(games) {
       ).join('');
     }
     
-    // Action buttons - always show achievements and completionist buttons
+    // Action buttons
     const achBtn = el.querySelector('.ach');
     const compBtn = el.querySelector('.comp');
     achBtn.addEventListener('click', () => openAchievements(game));
@@ -167,33 +189,113 @@ function renderGames(games) {
         editBtn.addEventListener('click', () => editGame(game));
         deleteBtn.addEventListener('click', () => deleteGame(game.id));
       }
+      
+      // Favorite button
+      const favoriteBtn = el.querySelector('.favorite-star');
+      if (favoriteBtn) {
+        favoriteBtn.addEventListener('click', async () => {
+          await toggleFavorite(game.id);
+        });
+      }
     }
     
     list.appendChild(el);
   });
 }
 
-// Search and filter
+// Sorting and filtering functionality
+document.getElementById('sort-by').addEventListener('change', (e) => {
+  currentSort = e.target.value;
+  applySortingAndFiltering();
+});
+
+// Update filter functions to use new state
+function filterGames() {
+  currentFilters.search = document.getElementById('search').value.toLowerCase();
+  currentFilters.status = document.getElementById('filter-status').value;
+  currentFilters.platform = document.getElementById('filter-platform').value;
+  applySortingAndFiltering();
+}
+
+// Initialize event listeners for filtering
 document.getElementById('search').addEventListener('input', filterGames);
 document.getElementById('filter-status').addEventListener('change', filterGames);
 document.getElementById('filter-platform').addEventListener('change', filterGames);
 
-function filterGames() {
-  const search = document.getElementById('search').value.toLowerCase();
-  const status = document.getElementById('filter-status').value;
-  const platform = document.getElementById('filter-platform').value;
+// Main sorting and filtering function
+function applySortingAndFiltering() {
+  let filtered = [...allGames];
   
-  const filtered = allGames.filter(game => {
-    const matchSearch = game.title.toLowerCase().includes(search) ||
-                       (game.notes || '').toLowerCase().includes(search) ||
-                       (game.tags || []).some(t => t.toLowerCase().includes(search));
-    const matchStatus = !status || game.status === status;
-    const matchPlatform = !platform || game.platform === platform;
+  // Apply filters
+  filtered = filtered.filter(game => {
+    const matchSearch = currentFilters.search === '' || 
+                       game.title.toLowerCase().includes(currentFilters.search) ||
+                       (game.notes || '').toLowerCase().includes(currentFilters.search) ||
+                       (game.tags || []).some(t => t.toLowerCase().includes(currentFilters.search));
+    
+    const matchStatus = !currentFilters.status || game.status === currentFilters.status;
+    const matchPlatform = !currentFilters.platform || game.platform === currentFilters.platform;
     
     return matchSearch && matchStatus && matchPlatform;
   });
   
+  // Apply sorting
+  filtered.sort((a, b) => {
+    switch (currentSort) {
+      case 'title':
+        return a.title.localeCompare(b.title);
+      
+      case 'title-desc':
+        return b.title.localeCompare(a.title);
+      
+      case 'hours':
+        return (b.hours_played || 0) - (a.hours_played || 0);
+      
+      case 'hours-asc':
+        return (a.hours_played || 0) - (b.hours_played || 0);
+      
+      case 'rating':
+        return (b.rating || 0) - (a.rating || 0);
+      
+      case 'rating-asc':
+        return (a.rating || 0) - (b.rating || 0);
+      
+      case 'status':
+        return (a.status || '').localeCompare(b.status || '');
+      
+      case 'platform':
+        return (a.platform || '').localeCompare(b.platform || '');
+      
+      case 'recent':
+      default:
+        return new Date(b.created_at) - new Date(a.created_at);
+    }
+  });
+  
   renderGames(filtered);
+}
+
+// Toggle favorite function
+async function toggleFavorite(gameId) {
+  try {
+    const response = await fetch(`/api/games/${gameId}/favorite`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      
+      // Update the game in allGames array
+      const gameIndex = allGames.findIndex(g => g.id === gameId);
+      if (gameIndex !== -1) {
+        allGames[gameIndex].is_favorite = result.is_favorite;
+        applySortingAndFiltering(); // Re-render with updated favorite status
+      }
+    }
+  } catch (err) {
+    console.error('Error toggling favorite:', err);
+  }
 }
 
 // Modal management
@@ -285,16 +387,85 @@ document.getElementById('save-game').addEventListener('click', async () => {
     
     if (response.status === 401) {
       alert('Your session has expired. Please login again.');
-      window.location.href = '/login';
+      window.location.reload();
       return;
     }
     
     closeModal();
     fetchGames();
+
+    const autoImportAppId = sessionStorage.getItem('autoImportAchievements');
+    if (autoImportAppId && !currentEditId) { // Only for new games, not edits
+      // Find the newly created game (it should be the first one in the list)
+      setTimeout(async () => {
+        const gamesRes = await fetch('/api/games');
+        const games = await gamesRes.json();
+        const newGame = games.find(g => g.steam_app_id == autoImportAppId);
+        
+        if (newGame) {
+          await importAchievementsForGame(newGame.id, autoImportAppId);
+        }
+        
+        sessionStorage.removeItem('autoImportAchievements');
+      }, 1000);
+    }
   } catch (err) {
     alert('Error saving game: ' + err.message);
   }
 });
+
+// Function to import achievements for a specific game
+async function importAchievementsForGame(gameId, steamAppId) {
+  try {
+    const res = await fetch(`/api/steam/achievements/${steamAppId}`);
+    const achievements = await res.json();
+    
+    if (achievements.length === 0) {
+      alert('No achievements found for this game on Steam.');
+      return;
+    }
+    
+    // Delete existing achievements first to avoid duplicates
+    const existingAchRes = await fetch(`/api/games/${gameId}/achievements`);
+    const existingAchievements = await existingAchRes.json();
+    
+    // Delete all existing achievements
+    for (const ach of existingAchievements) {
+      await fetch(`/api/games/${gameId}/achievements/${ach.id}`, {
+        method: 'DELETE'
+      });
+    }
+    
+    // Import new achievements
+    let importedCount = 0;
+    for (const ach of achievements) {
+      await fetch(`/api/games/${gameId}/achievements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: ach.name,
+          description: ach.description,
+          date: ach.unlock_date || null,
+          unlocked: ach.achieved || 0,
+          icon_url: ach.icon
+        })
+      });
+      importedCount++;
+    }
+    
+    alert(`Imported ${importedCount} achievements for this game!`);
+    
+    // Refresh achievements view if we're on the achievements tab
+    if (document.getElementById('tab-achievements').classList.contains('active')) {
+      const currentGame = allGames.find(g => g.id === gameId);
+      if (currentGame) {
+        openAchievements(currentGame);
+      }
+    }
+  } catch (err) {
+    alert('Error importing achievements: ' + err.message);
+  }
+}
 
 // Edit game
 function editGame(game) {
@@ -399,12 +570,15 @@ document.getElementById('steam-search-btn').addEventListener('click', async () =
           
           resultsDiv.innerHTML = '<div class="success">✓ Game details loaded from Steam</div>';
           
-          // Offer to import achievements
-          setTimeout(() => {
-            if (confirm('Import achievements from Steam?')) {
-              importSteamAchievements(el.dataset.id);
-            }
-          }, 500);
+          // Auto-check if achievements are available and offer to import
+          const achRes = await fetch(`/api/steam/achievements/${el.dataset.id}`);
+          const achievements = await achRes.json();
+          
+          if (achievements.length > 0) {
+            resultsDiv.innerHTML += '<div class="success" style="margin-top: 8px;">🎮 ' + achievements.length + ' achievements available</div>';
+            // Automatically import achievements when game is saved
+            sessionStorage.setItem('autoImportAchievements', el.dataset.id);
+          }
         } catch (err) {
           resultsDiv.innerHTML = '<div class="success">✓ Game selected from Steam</div>';
         }
@@ -648,13 +822,13 @@ async function loadStats() {
   document.getElementById('stat-total').textContent = stats.total_games;
   document.getElementById('stat-completed').textContent = stats.completed_games;
   document.getElementById('stat-hours').textContent = stats.total_hours + 'h';
-  document.getElementById('stat-achievements').textContent = `${stats.achievements_unlocked} / ${stats.achievements_total}`;
+  document.getElementById('stat-achievements').textContent = stats.total_achievements;
   
   // Achievement progress list
   const progressList = document.getElementById('achievement-progress-list');
   if (stats.achievement_progress && stats.achievement_progress.length > 0) {
     progressList.innerHTML = stats.achievement_progress.map(game => {
-      const percentage = game.total_achievements > 0 ? Math.round((game.unlocked_achievements / game.total_achievements) * 100) : 0;
+      const percentage = Math.round((game.unlocked_achievements / game.total_achievements) * 100);
       return `
         <div class="progress-item">
           <div class="progress-item-header">
@@ -714,140 +888,6 @@ async function loadStats() {
   }
 }
 
-// All Challenges View
-async function loadAllChallenges() {
-  const pane = document.getElementById('challenges-pane');
-  
-  const filterHtml = `
-    <div class="achievement-header">
-      <h2>🎯 All Challenges</h2>
-      <div class="achievement-actions">
-        <select id="challenge-filter" class="sort-select">
-          <option value="all">All Challenges</option>
-          <option value="in_progress">In Progress</option>
-          <option value="completed">Completed</option>
-        </select>
-        <select id="challenge-sort" class="sort-select">
-          <option value="date">Sort by Date</option>
-          <option value="difficulty">Sort by Difficulty</option>
-        </select>
-      </div>
-    </div>
-    <div id="challenges-list"></div>
-  `;
-  
-  pane.innerHTML = filterHtml;
-  
-  const filterSelect = document.getElementById('challenge-filter');
-  const sortSelect = document.getElementById('challenge-sort');
-  
-  const loadChallenges = async () => {
-    const status = filterSelect.value;
-    const sort = sortSelect.value;
-    const res = await fetch(`/api/completionist/all?status=${status}&sort=${sort}`);
-    const challenges = await res.json();
-    const list = document.getElementById('challenges-list');
-    
-    if (challenges.length === 0) {
-      list.innerHTML = '<div class="empty-state">No challenges found</div>';
-      return;
-    }
-    
-    list.innerHTML = challenges.map(comp => {
-      const difficultyColor = comp.difficulty >= 80 ? '#ff4757' : 
-                             comp.difficulty >= 50 ? '#ffa502' : 
-                             '#2ed573';
-      
-      const editDeleteHtml = isLoggedIn ? `
-        <div class="comp-actions">
-          <button class="btn-icon toggle-comp" data-id="${comp.id}" data-game="${comp.game_id}" data-completed="${comp.completed}" title="Toggle Status">
-            ${comp.completed ? '✓' : '○'}
-          </button>
-          <button class="btn-icon edit-comp-all" data-id="${comp.id}" data-game="${comp.game_id}" title="Edit">✏️</button>
-          <button class="btn-icon delete-comp-all" data-id="${comp.id}" data-game="${comp.game_id}" title="Delete">🗑️</button>
-        </div>
-      ` : '';
-      
-      return `
-        <div class="completionist-card">
-          <div class="comp-header">
-            <div class="comp-title-section">
-              <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">${comp.game_title}</div>
-              <div class="comp-title ${comp.completed ? 'completed-strike' : ''}">${comp.title}</div>
-              <div class="comp-difficulty" style="color: ${difficultyColor}">
-                Difficulty: ${comp.difficulty}/100
-              </div>
-            </div>
-            ${editDeleteHtml}
-          </div>
-          
-          ${comp.description ? `<div class="comp-desc">${comp.description}</div>` : ''}
-          
-          <div class="comp-meta">
-            ${comp.time_to_complete ? `<span>⏱️ ${comp.time_to_complete}</span>` : ''}
-            ${comp.completion_date ? `<span>📅 ${comp.completion_date}</span>` : ''}
-            <span style="color: ${comp.completed ? '#2ed573' : '#ffa502'}">
-              ${comp.completed ? '✓ Completed' : '⏳ In Progress'}
-            </span>
-          </div>
-          
-          ${comp.notes ? `<div class="comp-notes">${comp.notes}</div>` : ''}
-        </div>
-      `;
-    }).join('');
-    
-    if (isLoggedIn) {
-      // Toggle completion status
-      list.querySelectorAll('.toggle-comp').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const id = parseInt(btn.dataset.id);
-          const gameId = parseInt(btn.dataset.game);
-          const comp = challenges.find(c => c.id === id);
-          const newCompleted = comp.completed ? 0 : 1;
-          
-          await fetch(`/api/games/${gameId}/completionist/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...comp, completed: newCompleted })
-          });
-          
-          loadChallenges();
-        });
-      });
-      
-      // Edit handlers
-      list.querySelectorAll('.edit-comp-all').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const id = parseInt(btn.dataset.id);
-          const comp = challenges.find(c => c.id === id);
-          const gameId = parseInt(btn.dataset.game);
-          showCompletionistModal(gameId, comp);
-        });
-      });
-      
-      // Delete handlers
-      list.querySelectorAll('.delete-comp-all').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          if (!confirm('Delete this challenge?')) return;
-          
-          const id = parseInt(btn.dataset.id);
-          const gameId = parseInt(btn.dataset.game);
-          await fetch(`/api/games/${gameId}/completionist/${id}`, {
-            method: 'DELETE'
-          });
-          
-          loadChallenges();
-        });
-      });
-    }
-  };
-  
-  await loadChallenges();
-  
-  filterSelect.addEventListener('change', loadChallenges);
-  sortSelect.addEventListener('change', loadChallenges);
-}
-
 // Import/Export
 document.getElementById('export-json').addEventListener('click', async () => {
   const res = await fetch('/api/games');
@@ -878,10 +918,81 @@ document.getElementById('import-json').addEventListener('click', async () => {
   }
 });
 
-// Initialize
-checkAuth().then(() => {
-  fetchGames();
-  loadStats();
+// Steam library import
+document.getElementById('import-steam-library').addEventListener('click', async () => {
+  if (!isLoggedIn) {
+    alert('Please login to import Steam library');
+    return;
+  }
+  
+  const importAchievements = document.getElementById('import-achievements').checked;
+  
+  let confirmMessage = 'Import your Steam library? This will add all games from your Steam account.';
+  if (importAchievements) {
+    confirmMessage += ' AND automatically import their achievements.';
+  } else {
+    confirmMessage += ' (Achievements will NOT be imported).';
+  }
+  
+  if (!confirm(confirmMessage)) return;
+  
+  const btn = document.getElementById('import-steam-library');
+  const originalText = btn.textContent;
+  btn.textContent = 'Importing...';
+  btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/steam/import-library', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ 
+        import_achievements: importAchievements 
+      })
+    });
+    
+    // Check if response is OK
+    if (!res.ok) {
+      // Try to get error message from response
+      let errorMsg = `Server returned ${res.status}: ${res.statusText}`;
+      try {
+        const errorData = await res.json();
+        if (errorData.error) {
+          errorMsg = errorData.error;
+        }
+      } catch {
+        // If we can't parse JSON, use the status text
+      }
+      throw new Error(errorMsg);
+    }
+    
+    const result = await res.json();
+    
+    if (result.success) {
+      let message = `Successfully imported ${result.imported} games from Steam`;
+      if (importAchievements && result.achievements_imported > 0) {
+        message += ` with ${result.achievements_imported} achievements`;
+      }
+      if (result.skipped > 0) {
+        message += ` (skipped ${result.skipped} duplicates)`;
+      }
+      if (importAchievements && result.achievements_failed > 0) {
+        message += ` - ${result.achievements_failed} games had no achievements`;
+      }
+      alert(message);
+      fetchGames();
+    } else {
+      alert('Failed to import Steam library: ' + result.error);
+    }
+  } catch (err) {
+    console.error('Import error:', err);
+    alert('Error importing Steam library: ' + err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
 });
 
 // Completionist Achievements Modal & Functions
@@ -914,7 +1025,7 @@ function showCompletionistModal(gameId, existing = null) {
             <div class="form-group">
               <label>Difficulty (1-100) *</label>
               <input type="number" id="comp-difficulty" min="1" max="100" placeholder="50" value="${existing?.difficulty || ''}" required />
-              <small style="opacity: 0.7; font-size: 12px;">Rate how hard this is/was to complete</small>
+              <small style="opacity: 0.7; font-size: 12px;">Rate how hard this was to complete</small>
             </div>
             
             <div class="form-group">
@@ -926,13 +1037,6 @@ function showCompletionistModal(gameId, existing = null) {
           <div class="form-group">
             <label>Completion Date</label>
             <input type="date" id="comp-date" value="${existing?.completion_date || ''}" />
-          </div>
-          
-          <div class="form-group">
-            <label>
-              <input type="checkbox" id="comp-completed" ${existing?.completed ? 'checked' : ''} />
-              Challenge Completed
-            </label>
           </div>
           
           <div class="form-group">
@@ -964,7 +1068,6 @@ function closeCompModal() {
 async function saveCompletionist() {
   const title = document.getElementById('comp-title').value.trim();
   const difficulty = parseInt(document.getElementById('comp-difficulty').value);
-  const completed = document.getElementById('comp-completed').checked ? 1 : 0;
   
   if (!title || !difficulty) {
     alert('Title and Difficulty are required');
@@ -982,8 +1085,7 @@ async function saveCompletionist() {
     difficulty,
     time_to_complete: document.getElementById('comp-time').value.trim(),
     completion_date: document.getElementById('comp-date').value || null,
-    notes: document.getElementById('comp-notes').value.trim(),
-    completed
+    notes: document.getElementById('comp-notes').value.trim()
   };
   
   try {
@@ -1026,19 +1128,16 @@ async function loadCompletionistAchievements(gameId, sortBy = 'date') {
     
     const editDeleteHtml = isLoggedIn ? `
       <div class="comp-actions">
-        <button class="btn-icon toggle-comp-status" data-id="${comp.id}" data-completed="${comp.completed}" title="Toggle Status">
-          ${comp.completed ? '✓' : '○'}
-        </button>
         <button class="btn-icon edit-comp" data-id="${comp.id}" title="Edit">✏️</button>
         <button class="btn-icon delete-comp" data-id="${comp.id}" title="Delete">🗑️</button>
       </div>
     ` : '';
     
     return `
-      <div class="completionist-card ${comp.completed ? 'completed' : ''}">
+      <div class="completionist-card">
         <div class="comp-header">
           <div class="comp-title-section">
-            <div class="comp-title ${comp.completed ? 'completed-strike' : ''}">${comp.title}</div>
+            <div class="comp-title">${comp.title}</div>
             <div class="comp-difficulty" style="color: ${difficultyColor}">
               Difficulty: ${comp.difficulty}/100
             </div>
@@ -1051,9 +1150,6 @@ async function loadCompletionistAchievements(gameId, sortBy = 'date') {
         <div class="comp-meta">
           ${comp.time_to_complete ? `<span>⏱️ ${comp.time_to_complete}</span>` : ''}
           ${comp.completion_date ? `<span>📅 ${comp.completion_date}</span>` : ''}
-          <span style="color: ${comp.completed ? '#2ed573' : '#ffa502'}">
-            ${comp.completed ? '✓ Completed' : '⏳ In Progress'}
-          </span>
         </div>
         
         ${comp.notes ? `<div class="comp-notes">${comp.notes}</div>` : ''}
@@ -1062,23 +1158,6 @@ async function loadCompletionistAchievements(gameId, sortBy = 'date') {
   }).join('');
   
   if (isLoggedIn) {
-    // Toggle completion status
-    list.querySelectorAll('.toggle-comp-status').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = parseInt(btn.dataset.id);
-        const comp = achievements.find(c => c.id === id);
-        const newCompleted = comp.completed ? 0 : 1;
-        
-        await fetch(`/api/games/${gameId}/completionist/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...comp, completed: newCompleted })
-        });
-        
-        loadCompletionistAchievements(gameId, sortBy);
-      });
-    });
-    
     // Edit handlers
     list.querySelectorAll('.edit-comp').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1098,8 +1177,76 @@ async function loadCompletionistAchievements(gameId, sortBy = 'date') {
           method: 'DELETE'
         });
         
+        const sortBy = document.getElementById('comp-sort')?.value || 'date';
         loadCompletionistAchievements(gameId, sortBy);
       });
     });
   }
 }
+
+// Initialize
+checkAuth().then(() => {
+  fetchGames();
+  loadStats();
+  
+  // Set default sort option
+  document.getElementById('sort-by').value = currentSort;
+});
+
+// Add to your app.js
+document.getElementById('fix-images')?.addEventListener('click', async () => {
+  if (!confirm('This will fix image associations for all Steam games. Continue?')) return;
+  
+  const btn = document.getElementById('fix-images');
+  const originalText = btn.textContent;
+  btn.textContent = 'Fixing...';
+  btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/fix-image-associations', { method: 'POST' });
+    const result = await res.json();
+    
+    const resultDiv = document.getElementById('admin-tools-result');
+    if (result.success) {
+      resultDiv.innerHTML = `<div class="success">✓ ${result.message}</div>`;
+      if (result.errors && result.errors.length > 0) {
+        resultDiv.innerHTML += `<div class="error" style="margin-top: 8px;">Errors: ${result.errors.join(', ')}</div>`;
+      }
+      // Refresh games to show fixed images
+      fetchGames();
+    } else {
+      resultDiv.innerHTML = `<div class="error">❌ ${result.error}</div>`;
+    }
+  } catch (err) {
+    document.getElementById('admin-tools-result').innerHTML = `<div class="error">Error: ${err.message}</div>`;
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('cleanup-images')?.addEventListener('click', async () => {
+  if (!confirm('This will remove unused image files. Continue?')) return;
+  
+  const btn = document.getElementById('cleanup-images');
+  const originalText = btn.textContent;
+  btn.textContent = 'Cleaning...';
+  btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/cleanup-orphaned-images', { method: 'POST' });
+    const result = await res.json();
+    
+    const resultDiv = document.getElementById('admin-tools-result');
+    if (result.success) {
+      resultDiv.innerHTML = `<div class="success">✓ ${result.message}</div>`;
+    } else {
+      resultDiv.innerHTML = `<div class="error">❌ ${result.error}</div>`;
+    }
+  } catch (err) {
+    document.getElementById('admin-tools-result').innerHTML = `<div class="error">Error: ${err.message}</div>`;
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});

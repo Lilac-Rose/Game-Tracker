@@ -29,6 +29,17 @@
     <main class="main">
       <header class="topbar">
         <input id="search" placeholder="Search games..." />
+        <select id="sort-by">
+          <option value="recent">Recently Added</option>
+          <option value="title">Title A-Z</option>
+          <option value="title-desc">Title Z-A</option>
+          <option value="hours">Hours (High to Low)</option>
+          <option value="hours-asc">Hours (Low to High)</option>
+          <option value="rating">Rating (High to Low)</option>
+          <option value="rating-asc">Rating (Low to High)</option>
+          <option value="status">Status</option>
+          <option value="platform">Platform</option>
+        </select>
         <select id="filter-status">
           <option value="">All Status</option>
           <option value="Playing">Playing</option>
@@ -46,6 +57,13 @@
           <option value="Mobile">Mobile</option>
         </select>
         <button id="add-game" class="admin-only" style="display: none;">+ Add Game</button>
+        <button id="import-steam-library" class="admin-only" style="display: none;">📥 Import Steam</button>
+
+        <!-- Achievement import toggle -->
+        <label class="import-option">
+          <input type="checkbox" id="import-achievements" checked />
+          Import achievements
+        </label>
         
         <!-- Login controls (guest only) -->
         <div id="login-controls" class="guest-only" style="display: flex; gap: 8px;">
@@ -129,6 +147,15 @@
           <div class="row">
             <button id="export-json">📤 Export JSON</button>
             <button id="import-json">📥 Import JSON</button>
+          </div>
+
+          <div class="admin-only" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--accent-transparent);">
+            <h3>🛠️ Admin Tools</h3>
+            <div class="row">
+              <button id="fix-images" class="btn warning">🔧 Fix Image Associations</button>
+              <button id="cleanup-images" class="btn secondary">🧹 Cleanup Orphaned Images</button>
+            </div>
+            <div id="admin-tools-result" style="margin-top: 10px;"></div>
           </div>
         </div>
       </section>
