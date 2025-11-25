@@ -439,7 +439,7 @@ def import_steam_library():
         steam_games.sort(key=lambda x: x.get('playtime_forever', 0), reverse=True)
         
         # Limit to avoid rate limiting
-        MAX_GAMES_TO_IMPORT = 50 if import_achievements else 100
+        MAX_GAMES_TO_IMPORT = 50 if import_achievements else 1000
         if len(steam_games) > MAX_GAMES_TO_IMPORT:
             print(f"Limiting import to first {MAX_GAMES_TO_IMPORT} games (most played)")
             steam_games = steam_games[:MAX_GAMES_TO_IMPORT]
@@ -472,6 +472,8 @@ def import_steam_library():
             # Import game if not already imported
             if not status or status['game_imported'] == 0:
                 hours_played = round(game.get('playtime_forever', 0) / 60, 1) if game.get('playtime_forever', 0) > 0 else None
+                
+                # Use Steam CDN URL directly - no downloading!
                 cover_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
                 
                 cur.execute(
@@ -480,15 +482,6 @@ def import_steam_library():
                     (title, 'PC', 'Playing', hours_played, app_id, cover_url, None, None)
                 )
                 game_id = cur.lastrowid
-                
-                # Download cover with proper association
-                if cover_url:
-                    try:
-                        local_cover = download_cover_image(cover_url, game_id, app_id)
-                        if local_cover:
-                            cur.execute('UPDATE games SET cover_url=? WHERE id=?', (local_cover, game_id))
-                    except Exception as e:
-                        print(f"Warning: Could not download cover for {title}: {e}")
                 
                 # Mark game as imported
                 achievements_status = 1 if not import_achievements else 0
@@ -557,10 +550,9 @@ def import_steam_library():
             
             conn.commit()
             
-            # Rate limiting - longer delay when importing achievements
-            if i < len(steam_games) - 1:
-                delay = 2 if import_achievements else 0.5
-                time.sleep(delay)
+            # Rate limiting - only when importing achievements
+            if import_achievements and i < len(steam_games) - 1:
+                time.sleep(2)
         
         conn.close()
         

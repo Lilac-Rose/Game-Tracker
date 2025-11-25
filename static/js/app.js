@@ -2,12 +2,45 @@
 let allGames = [];
 let currentEditId = null;
 let isLoggedIn = false;
-let currentSort = 'recent';
+let currentSort = localStorage.getItem('gameTracker_sort') || 'recent';
 let currentFilters = {
   status: '',
   platform: '',
   search: ''
 };
+
+function loadSavedFilters() {
+  const savedStatus = localStorage.getItem('gameTracker_filter_status');
+  const savedPlatform = localStorage.getItem('gameTracker_filter_platform');
+  const savedSearch = localStorage.getItem('gameTracker_filter_search');
+  
+  if (savedStatus) {
+    document.getElementById('filter-status').value = savedStatus;
+    currentFilters.status = savedStatus;
+  }
+  if (savedPlatform) {
+    document.getElementById('filter-platform').value = savedPlatform;
+    currentFilters.platform = savedPlatform;
+  }
+  if (savedSearch) {
+    document.getElementById('search').value = savedSearch;
+    currentFilters.search = savedSearch;
+  }
+}
+
+// Save filters when they change
+function saveFilters() {
+  localStorage.setItem('gameTracker_filter_status', currentFilters.status);
+  localStorage.setItem('gameTracker_filter_platform', currentFilters.platform);
+  localStorage.setItem('gameTracker_filter_search', currentFilters.search);
+}
+
+// Sorting and filtering functionality
+document.getElementById('sort-by').addEventListener('change', (e) => {
+  currentSort = e.target.value;
+  localStorage.setItem('gameTracker_sort', currentSort);
+  applySortingAndFiltering();
+});
 
 // Check authentication status
 async function checkAuth() {
@@ -214,8 +247,25 @@ function filterGames() {
   currentFilters.search = document.getElementById('search').value.toLowerCase();
   currentFilters.status = document.getElementById('filter-status').value;
   currentFilters.platform = document.getElementById('filter-platform').value;
+  
+  saveFilters();
   applySortingAndFiltering();
 }
+
+// Initialize event listeners for filtering
+document.getElementById('search').addEventListener('input', filterGames);
+document.getElementById('filter-status').addEventListener('change', filterGames);
+document.getElementById('filter-platform').addEventListener('change', filterGames);
+
+// Initialize
+checkAuth().then(() => {
+  loadSavedFilters();
+  fetchGames();
+  loadStats();
+  
+  // Set sort option from localStorage
+  document.getElementById('sort-by').value = currentSort;
+});
 
 // Initialize event listeners for filtering
 document.getElementById('search').addEventListener('input', filterGames);
