@@ -1035,19 +1035,25 @@ def api_stats():
     cur.execute('SELECT COUNT(*) as total_achievements FROM achievements')
     achievements_total = cur.fetchone()['total_achievements']
     
-    # Get achievement progress per game
+    # Get achievement progress per game - SORTED BY PERCENTAGE
     cur.execute('''
         SELECT g.id, g.title, 
                COUNT(CASE WHEN a.unlocked=1 THEN 1 END) as unlocked_achievements,
-               COUNT(a.id) as total_achievements
+               COUNT(a.id) as total_achievements,
+               CASE 
+                 WHEN COUNT(a.id) > 0 THEN 
+                   ROUND((COUNT(CASE WHEN a.unlocked=1 THEN 1 END) * 100.0 / COUNT(a.id)), 1)
+                 ELSE 0 
+               END as completion_percentage
         FROM games g
         LEFT JOIN achievements a ON g.id = a.game_id
         GROUP BY g.id
         HAVING total_achievements > 0
-        ORDER BY g.created_at DESC
+        ORDER BY completion_percentage DESC, total_achievements DESC
     ''')
     achievement_progress = [dict(r) for r in cur.fetchall()]
     
+    # Rest of your stats code remains the same...
     # Get status breakdown
     cur.execute('''
         SELECT status, COUNT(*) as count FROM games 

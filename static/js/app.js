@@ -206,6 +206,29 @@ function renderGames(games) {
       ).join('');
     }
     
+    // Achievement progress bar (only show if game has achievements)
+    const cardBody = el.querySelector('.card-body');
+    if (game.achievement_progress && game.achievement_progress.total_achievements > 0) {
+      const unlocked = game.achievement_progress.unlocked_achievements || 0;
+      const total = game.achievement_progress.total_achievements;
+      const percentage = Math.round((unlocked / total) * 100);
+      
+      const progressBar = document.createElement('div');
+      progressBar.className = 'achievement-progress-mini';
+      progressBar.innerHTML = `
+        <div class="progress-info">
+          <span>🏆 ${unlocked}/${total}</span>
+          <span>${percentage}%</span>
+        </div>
+        <div class="progress-bar-mini">
+          <div class="progress-fill-mini" style="width: ${percentage}%"></div>
+        </div>
+      `;
+      
+      // Insert progress bar before the card actions
+      cardBody.appendChild(progressBar);
+    }
+    
     // Action buttons
     const achBtn = el.querySelector('.ach');
     const compBtn = el.querySelector('.comp');
@@ -872,28 +895,12 @@ async function loadStats() {
   document.getElementById('stat-total').textContent = stats.total_games;
   document.getElementById('stat-completed').textContent = stats.completed_games;
   document.getElementById('stat-hours').textContent = stats.total_hours + 'h';
-  document.getElementById('stat-achievements').textContent = stats.total_achievements;
+  document.getElementById('stat-achievements').textContent = stats.achievements_unlocked + ' / ' + stats.achievements_total;
   
-  // Achievement progress list
+  // Remove achievement progress list section entirely
   const progressList = document.getElementById('achievement-progress-list');
-  if (stats.achievement_progress && stats.achievement_progress.length > 0) {
-    progressList.innerHTML = stats.achievement_progress.map(game => {
-      const percentage = Math.round((game.unlocked_achievements / game.total_achievements) * 100);
-      return `
-        <div class="progress-item">
-          <div class="progress-item-header">
-            <span class="progress-game-title">${game.title}</span>
-            <span class="progress-count">${game.unlocked_achievements} / ${game.total_achievements}</span>
-          </div>
-          <div class="progress-bar-small">
-            <div class="progress-bar-fill-small" style="width: ${percentage}%"></div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  } else {
-    progressList.innerHTML = '<div class="empty-state">No achievements tracked yet</div>';
-  }
+  progressList.innerHTML = ''; // Clear it
+  progressList.style.display = 'none'; // Hide it
   
   // Status breakdown
   const statusBreakdown = document.getElementById('status-breakdown');
