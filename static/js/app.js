@@ -208,6 +208,8 @@ function renderGames(games) {
     
     // Achievement progress bar (only show if game has achievements)
     const cardBody = el.querySelector('.card-body');
+    
+    // Check if game has achievement progress data and achievements exist
     if (game.achievement_progress && game.achievement_progress.total_achievements > 0) {
       const unlocked = game.achievement_progress.unlocked_achievements || 0;
       const total = game.achievement_progress.total_achievements;
@@ -226,7 +228,8 @@ function renderGames(games) {
       `;
       
       // Insert progress bar before the card actions
-      cardBody.appendChild(progressBar);
+      const cardActions = cardBody.querySelector('.card-actions');
+      cardBody.insertBefore(progressBar, cardActions);
     }
     
     // Action buttons

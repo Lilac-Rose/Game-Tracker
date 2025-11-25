@@ -817,71 +817,39 @@ def reset_steam_import():
     
     return jsonify({'success': True, 'message': 'Import status reset. You can now retry achievement imports.'})
     
-@app.route('/api/games', methods=['GET', 'POST'])
+@app.route('/api/games')
 def api_games():
     conn = get_db()
     cur = conn.cursor()
     
-    if request.method == 'POST':
-        # Require authentication for POST
-        if not session.get('logged_in'):
-            return jsonify({'error': 'Authentication required'}), 401
+    # Get all games with their tags AND achievement counts
+    cur.execute('''
+        SELECT g.*, 
+               COUNT(CASE WHEN a.unlocked=1 THEN 1 END) as unlocked_achievements,
+               COUNT(a.id) as total_achievements
+        FROM games g
+        LEFT JOIN achievements a ON g.id = a.game_id
+        GROUP BY g.id
+        ORDER BY g.is_favorite DESC, g.created_at DESC
+    ''')
+    rows = [dict(r) for r in cur.fetchall()]
+    
+    # Add tags to each game
+    for game in rows:
+        cur.execute('SELECT tag FROM tags WHERE game_id=?', (game['id'],))
+        game['tags'] = [r['tag'] for r in cur.fetchall()]
         
-        data = request.json
-        
-        # Download cover image if URL is provided and it's an external URL
-        cover_url = data.get('cover_url')
-        if cover_url and (cover_url.startswith('http://') or cover_url.startswith('https://')):
-            # First insert to get the game ID
-            cur.execute(
-                """INSERT INTO games (title, platform, status, notes, rating, hours_played, 
-                   steam_app_id, cover_url, completion_date) 
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (data.get('title'), data.get('platform'), data.get('status'), 
-                 data.get('notes'), data.get('rating'), data.get('hours_played'),
-                 data.get('steam_app_id'), None, data.get('completion_date'))
-            )
-            conn.commit()
-            new_id = cur.lastrowid
-            
-            # Download the cover image
-            local_cover = download_cover_image(cover_url, new_id)
-            if local_cover:
-                # Update with local path
-                cur.execute('UPDATE games SET cover_url=? WHERE id=?', (local_cover, new_id))
-                conn.commit()
+        # Add achievement progress data
+        if game['total_achievements'] > 0:
+            game['achievement_progress'] = {
+                'unlocked_achievements': game['unlocked_achievements'],
+                'total_achievements': game['total_achievements']
+            }
         else:
-            cur.execute(
-                """INSERT INTO games (title, platform, status, notes, rating, hours_played, 
-                   steam_app_id, cover_url, completion_date) 
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (data.get('title'), data.get('platform'), data.get('status'), 
-                 data.get('notes'), data.get('rating'), data.get('hours_played'),
-                 data.get('steam_app_id'), cover_url, data.get('completion_date'))
-            )
-            conn.commit()
-            new_id = cur.lastrowid
-        
-        # Add tags if provided
-        if data.get('tags'):
-            for tag in data.get('tags', []):
-                cur.execute('INSERT INTO tags (game_id, tag) VALUES (?,?)', (new_id, tag))
-            conn.commit()
-        
-        conn.close()
-        return jsonify({'id': new_id}), 201
-    else:
-        # Get all games with their tags
-        cur.execute('SELECT * FROM games ORDER BY is_favorite DESC, created_at DESC')
-        rows = [dict(r) for r in cur.fetchall()]
-        
-        # Add tags to each game
-        for game in rows:
-            cur.execute('SELECT tag FROM tags WHERE game_id=?', (game['id'],))
-            game['tags'] = [r['tag'] for r in cur.fetchall()]
-        
-        conn.close()
-        return jsonify(rows)
+            game['achievement_progress'] = None
+    
+    conn.close()
+    return jsonify(rows)
 
 @app.route('/api/games/<int:game_id>', methods=['GET', 'PUT', 'DELETE'])
 def api_game(game_id):
