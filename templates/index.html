@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GameTracker — Lilac Rose</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">🎮 GameTracker</div>
+      <nav>
+        <button class="nav-btn active" data-tab="games">📚 Games</button>
+        <button class="nav-btn" data-tab="stats">📊 Statistics</button>
+        <button class="nav-btn" data-tab="achievements">🏆 Achievements</button>
+        <button class="nav-btn" data-tab="completionist">🎯 Completionist</button>
+        <button class="nav-btn" data-tab="challenges">🎪 All Challenges</button>
+        <button class="nav-btn" data-tab="import">💾 Import/Export</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="auth-status">
+          <span id="auth-indicator"></span>
+        </div>
+        lilacrose.dev
+      </div>
+    </aside>
+    
+    <main class="main">
+      <header class="topbar">
+        <input id="search" placeholder="Search games..." />
+        <select id="filter-status">
+          <option value="">All Status</option>
+          <option value="Playing">Playing</option>
+          <option value="Completed">Completed</option>
+          <option value="Backlog">Backlog</option>
+          <option value="Dropped">Dropped</option>
+          <option value="Wishlist">Wishlist</option>
+        </select>
+        <select id="filter-platform">
+          <option value="">All Platforms</option>
+          <option value="PC">PC</option>
+          <option value="PlayStation">PlayStation</option>
+          <option value="Xbox">Xbox</option>
+          <option value="Nintendo Switch">Nintendo Switch</option>
+          <option value="Mobile">Mobile</option>
+        </select>
+        <button id="add-game" class="admin-only" style="display: none;">+ Add Game</button>
+        
+        <!-- Login controls (guest only) -->
+        <div id="login-controls" class="guest-only" style="display: flex; gap: 8px;">
+          <input type="password" id="password-input" placeholder="Password" style="width: 150px;" />
+          <button id="login-btn">🔓 Unlock</button>
+        </div>
+        
+        <!-- Logout button (admin only) -->
+        <button id="logout-btn" class="admin-only" style="display: none;">Logout</button>
+      </header>
+      
+      <section id="content">
+        <!-- Games Tab -->
+        <div id="tab-games" class="tab active">
+          <div class="grid" id="games-list"></div>
+        </div>
+        
+        <!-- Statistics Tab -->
+        <div id="tab-stats" class="tab">
+          <h2>Your Gaming Statistics</h2>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="stat-total">0</div>
+              <div class="stat-label">Total Games</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-completed">0</div>
+              <div class="stat-label">Completed Games</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-hours">0h</div>
+              <div class="stat-label">Total Hours Played</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-achievements">0 / 0</div>
+              <div class="stat-label">Achievements Unlocked</div>
+            </div>
+          </div>
+          
+          <div class="stats-section">
+            <h3>Achievement Progress</h3>
+            <div id="achievement-progress-list"></div>
+          </div>
+          
+          <div class="stats-section">
+            <h3>Games by Status</h3>
+            <div class="status-breakdown" id="status-breakdown"></div>
+          </div>
+          
+          <div class="stats-section">
+            <h3>Games by Platform</h3>
+            <div class="platform-breakdown" id="platform-breakdown"></div>
+          </div>
+          
+          <div class="stats-section">
+            <h3>Recent Completions</h3>
+            <div id="recent-completions"></div>
+          </div>
+        </div>
+        
+        <!-- Achievements Tab -->
+        <div id="tab-achievements" class="tab">
+          <div id="achievements-pane">Select a game to view achievements.</div>
+        </div>
+        
+        <!-- Completionist Tab -->
+        <div id="tab-completionist" class="tab">
+          <div id="completionist-pane">Select a game to view completionist challenges.</div>
+        </div>
+        
+        <!-- All Challenges Tab -->
+        <div id="tab-challenges" class="tab">
+          <div id="challenges-pane">Loading challenges...</div>
+        </div>
+        
+        <!-- Import/Export Tab -->
+        <div id="tab-import" class="tab">
+          <h3>Import / Export</h3>
+          <p>Backup and restore your game library as JSON.</p>
+          <textarea id="ie-data" rows="12" placeholder="JSON data will appear here..."></textarea>
+          <div class="row">
+            <button id="export-json">📤 Export JSON</button>
+            <button id="import-json">📥 Import JSON</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  
+  <!-- Game Card Template -->
+  <template id="game-card">
+    <div class="card game-card">
+      <div class="game-cover"></div>
+      <div class="card-content">
+        <div class="card-head">
+          <strong class="game-title"></strong>
+          <span class="game-platform badge"></span>
+        </div>
+        <div class="card-body">
+          <p class="game-notes"></p>
+          <div class="game-tags"></div>
+          <div class="card-row">
+            <span class="game-status badge"></span>
+            <span class="game-rating"></span>
+          </div>
+          <div class="game-hours"></div>
+        </div>
+        <div class="card-actions">
+          <button class="btn small edit admin-only" style="display: none;" title="Edit">✏️ Edit</button>
+          <button class="btn small delete admin-only" style="display: none;" title="Delete">🗑️ Delete</button>
+          <button class="btn small ach" title="Achievements">🏆 View</button>
+          <button class="btn small comp" title="Completionist">🎯 Challenges</button>
+        </div>
+      </div>
+    </div>
+  </template>
+  
+  <!-- Add/Edit Game Modal -->
+  <div id="game-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title">Add Game</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Title *</label>
+          <div class="input-with-btn">
+            <input type="text" id="input-title" placeholder="Game title" required />
+            <button id="steam-search-btn" title="Search Steam">🔍 Steam</button>
+          </div>
+          <div id="steam-results" class="steam-results"></div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Platform</label>
+            <select id="input-platform">
+              <option value="">Select...</option>
+              <option value="PC">PC</option>
+              <option value="PlayStation">PlayStation</option>
+              <option value="Xbox">Xbox</option>
+              <option value="Nintendo Switch">Nintendo Switch</option>
+              <option value="Mobile">Mobile</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Status</label>
+            <select id="input-status">
+              <option value="">Select...</option>
+              <option value="Playing">Playing</option>
+              <option value="Completed">Completed</option>
+              <option value="Backlog">Backlog</option>
+              <option value="Dropped">Dropped</option>
+              <option value="Wishlist">Wishlist</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Rating (1-5)</label>
+            <input type="number" id="input-rating" min="1" max="5" />
+          </div>
+          
+          <div class="form-group">
+            <label>Hours Played</label>
+            <input type="number" id="input-hours" min="0" step="0.5" />
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Completion Date</label>
+          <input type="date" id="input-completion" />
+        </div>
+        
+        <div class="form-group">
+          <label>Tags (comma separated)</label>
+          <input type="text" id="input-tags" placeholder="RPG, Multiplayer, Story-Rich" />
+        </div>
+        
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="input-notes" rows="3" placeholder="Personal notes about the game..."></textarea>
+        </div>
+        
+        <input type="hidden" id="input-steam-id" />
+        <input type="hidden" id="input-cover" />
+        <input type="hidden" id="edit-game-id" />
+      </div>
+      <div class="modal-footer">
+        <button id="cancel-game" class="btn secondary">Cancel</button>
+        <button id="save-game" class="btn primary">Save Game</button>
+      </div>
+    </div>
+  </div>
+  
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
