@@ -15,8 +15,6 @@
           <button class="nav-btn" data-tab="random">Random Game</button>
           <button class="nav-btn" data-tab="top10">Lilac's Top 10</button>
           <button class="nav-btn" data-tab="stats">Statistics</button>
-          <button class="nav-btn" data-tab="achievements">Achievements</button>
-          <button class="nav-btn" data-tab="completionist">Completionist</button>
           <button class="nav-btn" data-tab="challenges">All Challenges</button>
           <button class="nav-btn" data-tab="import">Import/Export</button>
         </nav>
@@ -222,7 +220,22 @@
         
         <!-- All Challenges Tab -->
         <div id="tab-challenges" class="tab">
-          <div id="challenges-pane">Loading challenges...</div>
+          <div class="achievement-header">
+            <h2>All Completionist Challenges</h2>
+            <div class="achievement-actions">
+              <select id="challenges-sort" class="sort-select">
+                <option value="date">Sort by Date</option>
+                <option value="difficulty">Sort by Difficulty</option>
+                <option value="status">Sort by Status</option>
+              </select>
+              <select id="challenges-filter" class="sort-select">
+                <option value="all">All Challenges</option>
+                <option value="completed">Completed Only</option>
+                <option value="incomplete">Incomplete Only</option>
+              </select>
+            </div>
+          </div>
+          <div id="challenges-list"></div>
         </div>
         
         <!-- Import/Export Tab -->

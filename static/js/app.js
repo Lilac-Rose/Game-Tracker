@@ -138,6 +138,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.getElementById('tab-' + tab).classList.add('active');
     
     if (tab === 'stats') loadStats();
+    if (tab === 'challenges') loadAllChallenges(); // Add this line
   });
 });
 
@@ -884,38 +885,49 @@ async function importSteamAchievements(appId) {
 }
 
 // Achievements
+// Achievements - show in a modal instead of switching tabs
 async function openAchievements(game) {
-  document.querySelector('[data-tab="achievements"]').click();
-  const achPane = document.getElementById('achievements-pane');
-  
-  const addBtnHtml = isLoggedIn ? '<button id="add-ach-btn" class="btn">+ Add Achievement</button>' : '';
-  const importBtnHtml = (isLoggedIn && game.steam_app_id) ? '<button id="import-steam-ach" class="btn">Import from Steam</button>' : '';
-  
-  achPane.innerHTML = `
-    <div class="achievement-header">
-      <div class="game-info-header">
-        <h2>${game.title}</h2>
-        <div class="game-meta-row">
-          <span class="game-hours">${game.hours_played ? `${game.hours_played}h` : '0h'}</span>
-          <span class="game-status badge status-${(game.status || '').toLowerCase()}">${game.status || ''}</span>
-          <span class="game-rating">${game.rating ? '★'.repeat(game.rating) + '☆'.repeat(5 - game.rating) : '☆☆☆☆☆'}</span>
+  const modalHtml = `
+    <div class="modal show" id="achievements-modal">
+      <div class="modal-content" style="max-width: 1000px; max-height: 90vh; width: 95vw;">
+        <div class="modal-header">
+          <h2>Achievements - ${game.title}</h2>
+          <button class="modal-close" onclick="closeAchievementsModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="achievement-header">
+            <div class="game-info-header">
+              <h3>${game.title}</h3>
+              <div class="game-meta-row">
+                <span class="game-hours">${game.hours_played ? `${game.hours_played}h` : '0h'}</span>
+                <span class="game-status badge status-${(game.status || '').toLowerCase()}">${game.status || ''}</span>
+                <span class="game-rating">${game.rating ? '★'.repeat(game.rating) + '☆'.repeat(5 - game.rating) : '☆☆☆☆☆'}</span>
+              </div>
+            </div>
+            <div class="achievement-actions">
+              ${isLoggedIn ? '<button id="add-ach-btn" class="btn">+ Add Achievement</button>' : ''}
+              ${isLoggedIn && game.steam_app_id ? '<button id="import-steam-ach" class="btn">Import from Steam</button>' : ''}
+            </div>
+          </div>
+          <div class="achievement-progress-bar-container">
+            <div class="achievement-progress-bar">
+              <div class="achievement-progress-fill" id="ach-progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="achievement-progress-text" id="ach-progress-text">0 / 0 (0%)</div>
+          </div>
+          <div id="ach-modal-list" style="max-height: 500px; overflow-y: auto;"></div>
         </div>
       </div>
-      <div class="achievement-actions">
-        ${addBtnHtml}
-        ${importBtnHtml}
-      </div>
     </div>
-    <div class="achievement-progress-bar-container">
-      <div class="achievement-progress-bar">
-        <div class="achievement-progress-fill" id="ach-progress-fill" style="width: 0%"></div>
-      </div>
-      <div class="achievement-progress-text" id="ach-progress-text">0 / 0 (0%)</div>
-    </div>
-    <div id="ach-list"></div>
   `;
   
-  await loadAchievements(game.id);
+  // Remove existing modal if any
+  document.getElementById('achievements-modal')?.remove();
+  
+  // Add new modal
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  
+  await loadAchievementsModal(game.id);
   
   if (isLoggedIn) {
     const addBtn = document.getElementById('add-ach-btn');
@@ -934,7 +946,7 @@ async function openAchievements(game) {
             date: new Date().toISOString().slice(0, 10),
             unlocked: 1
           })
-        }).then(() => loadAchievements(game.id))
+        }).then(() => loadAchievementsModal(game.id))
         .catch(err => {
           alert('Error adding achievement. Your session may have expired.');
           isLoggedIn = false;
@@ -980,7 +992,7 @@ async function openAchievements(game) {
         }
         
         // Auto-refresh after import
-        loadAchievements(game.id);
+        loadAchievementsModal(game.id);
         importBtn.textContent = 'Import from Steam';
         importBtn.disabled = false;
       });
@@ -988,35 +1000,267 @@ async function openAchievements(game) {
   }
 }
 
-// Open completionist for a game
+function closeAchievementsModal() {
+  document.getElementById('achievements-modal')?.remove();
+}
+
+async function loadAchievementsModal(gameId) {
+  const res = await fetch(`/api/games/${gameId}/achievements`);
+  const achievements = await res.json();
+  const list = document.getElementById('ach-modal-list');
+  
+  if (achievements.length === 0) {
+    list.innerHTML = '<div class="empty-state">No achievements yet</div>';
+    document.getElementById('ach-progress-text').textContent = '0 / 0 (0%)';
+    document.getElementById('ach-progress-fill').style.width = '0%';
+    return;
+  }
+  
+  // Calculate progress
+  const unlocked = achievements.filter(a => a.unlocked).length;
+  const total = achievements.length;
+  const percentage = Math.round((unlocked / total) * 100);
+  
+  // Update progress bar with animation
+  const progressFill = document.getElementById('ach-progress-fill');
+  const progressText = document.getElementById('ach-progress-text');
+  
+  // Reset to 0 then animate to target percentage
+  progressFill.style.width = '0%';
+  progressText.textContent = '0 / 0 (0%)';
+  
+  // Use setTimeout to ensure the reset is rendered before animation
+  setTimeout(() => {
+    progressFill.style.width = percentage + '%';
+    progressText.textContent = `${unlocked} / ${total} (${percentage}%)`;
+  }, 50);
+  
+  const actionsHtml = isLoggedIn ? `
+    <div class="ach-actions">
+      <button class="btn-icon toggle-ach" data-id="ACH_ID" data-game="GAME_ID" data-unlocked="UNLOCKED">
+        TOGGLE_ICON
+      </button>
+      <button class="btn-icon delete-ach" data-id="ACH_ID" data-game="GAME_ID">🗑️</button>
+    </div>
+  ` : '';
+  
+  list.innerHTML = achievements.map((ach, index) => {
+    const actions = actionsHtml
+      .replace(/ACH_ID/g, ach.id)
+      .replace(/GAME_ID/g, gameId)
+      .replace('UNLOCKED', ach.unlocked)
+      .replace('TOGGLE_ICON', ach.unlocked ? '✓' : '○');
+    
+    // Add staggered animation delay based on index
+    const animationDelay = 0.1 + (index * 0.05);
+    
+    return `
+      <div class="achievement-card ${ach.unlocked ? 'unlocked' : 'locked'}" 
+           style="animation-delay: ${animationDelay}s">
+        ${ach.icon_url ? `<img src="${ach.icon_url}" class="ach-icon" />` : ''}
+        <div class="ach-content">
+          <div class="ach-title">${ach.title}</div>
+          <div class="ach-desc">${ach.description || ''}</div>
+          ${ach.date ? `<div class="ach-date">📅 ${ach.date}</div>` : ''}
+        </div>
+        ${actions}
+      </div>
+    `;
+  }).join('');
+  
+  if (isLoggedIn) {
+    // Toggle achievement
+    list.querySelectorAll('.toggle-ach').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const achId = btn.dataset.id;
+        const gameId = btn.dataset.game;
+        const unlocked = btn.dataset.unlocked === '1' ? 0 : 1;
+        
+        // Add loading state
+        btn.disabled = true;
+        btn.innerHTML = '⏳';
+        
+        await fetch(`/api/games/${gameId}/achievements/${achId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ unlocked })
+        });
+        
+        // Reload achievements with animation
+        await loadAchievementsModal(gameId);
+      });
+    });
+    
+    // Delete achievement
+    list.querySelectorAll('.delete-ach').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this achievement?')) return;
+        
+        const achId = btn.dataset.id;
+        const gameId = btn.dataset.game;
+        
+        // Add loading state
+        btn.disabled = true;
+        btn.innerHTML = '⏳';
+        
+        await fetch(`/api/games/${gameId}/achievements/${achId}`, {
+          method: 'DELETE'
+        });
+        
+        // Reload achievements with animation
+        await loadAchievementsModal(gameId);
+      });
+    });
+  }
+}
+
+async function loadAchievementsModal(gameId) {
+  const res = await fetch(`/api/games/${gameId}/achievements`);
+  const achievements = await res.json();
+  const list = document.getElementById('ach-modal-list');
+  
+  if (achievements.length === 0) {
+    list.innerHTML = '<div class="empty-state">No achievements yet</div>';
+    document.getElementById('ach-progress-text').textContent = '0 / 0 (0%)';
+    document.getElementById('ach-progress-fill').style.width = '0%';
+    return;
+  }
+  
+  // Calculate progress
+  const unlocked = achievements.filter(a => a.unlocked).length;
+  const total = achievements.length;
+  const percentage = Math.round((unlocked / total) * 100);
+  
+  // Update progress bar with animation
+  const progressFill = document.getElementById('ach-progress-fill');
+  const progressText = document.getElementById('ach-progress-text');
+  
+  // Reset to 0 then animate to target percentage
+  progressFill.style.width = '0%';
+  progressText.textContent = '0 / 0 (0%)';
+  
+  // Use setTimeout to ensure the reset is rendered before animation
+  setTimeout(() => {
+    progressFill.style.width = percentage + '%';
+    progressText.textContent = `${unlocked} / ${total} (${percentage}%)`;
+  }, 50);
+  
+  const actionsHtml = isLoggedIn ? `
+    <div class="ach-actions">
+      <button class="btn-icon toggle-ach" data-id="ACH_ID" data-game="GAME_ID" data-unlocked="UNLOCKED">
+        TOGGLE_ICON
+      </button>
+      <button class="btn-icon delete-ach" data-id="ACH_ID" data-game="GAME_ID">🗑️</button>
+    </div>
+  ` : '';
+  
+  list.innerHTML = achievements.map((ach, index) => {
+    const actions = actionsHtml
+      .replace(/ACH_ID/g, ach.id)
+      .replace(/GAME_ID/g, gameId)
+      .replace('UNLOCKED', ach.unlocked)
+      .replace('TOGGLE_ICON', ach.unlocked ? '✓' : '○');
+    
+    // Add staggered animation delay based on index
+    const animationDelay = 0.1 + (index * 0.05);
+    
+    return `
+      <div class="achievement-card ${ach.unlocked ? 'unlocked' : 'locked'}" 
+           style="animation-delay: ${animationDelay}s">
+        ${ach.icon_url ? `<img src="${ach.icon_url}" class="ach-icon" />` : ''}
+        <div class="ach-content">
+          <div class="ach-title">${ach.title}</div>
+          <div class="ach-desc">${ach.description || ''}</div>
+          ${ach.date ? `<div class="ach-date">📅 ${ach.date}</div>` : ''}
+        </div>
+        ${actions}
+      </div>
+    `;
+  }).join('');
+  
+  if (isLoggedIn) {
+    // Toggle achievement
+    list.querySelectorAll('.toggle-ach').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const achId = btn.dataset.id;
+        const gameId = btn.dataset.game;
+        const unlocked = btn.dataset.unlocked === '1' ? 0 : 1;
+        
+        // Add loading state
+        btn.disabled = true;
+        btn.innerHTML = '⏳';
+        
+        await fetch(`/api/games/${gameId}/achievements/${achId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ unlocked })
+        });
+        
+        // Reload achievements with animation
+        await loadAchievementsModal(gameId);
+      });
+    });
+    
+    // Delete achievement
+    list.querySelectorAll('.delete-ach').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this achievement?')) return;
+        
+        const achId = btn.dataset.id;
+        const gameId = btn.dataset.game;
+        
+        // Add loading state
+        btn.disabled = true;
+        btn.innerHTML = '⏳';
+        
+        await fetch(`/api/games/${gameId}/achievements/${achId}`, {
+          method: 'DELETE'
+        });
+        
+        // Reload achievements with animation
+        await loadAchievementsModal(gameId);
+      });
+    });
+  }
+}
+
+// Open completionist for a game - show in modal
 async function openCompletionist(game) {
-  document.querySelector('[data-tab="completionist"]').click();
-  const compPane = document.getElementById('completionist-pane');
-  
-  const compAddBtnHtml = isLoggedIn ? '<button id="add-comp-btn" class="btn">+ Add Challenge</button>' : '';
-  const compSortHtml = `
-    <select id="comp-sort" class="sort-select">
-      <option value="date">Sort by Date</option>
-      <option value="difficulty">Sort by Difficulty</option>
-    </select>
-  `;
-  
-  compPane.innerHTML = `
-    <div class="achievement-header">
-      <h2>🎯 ${game.title}</h2>
-      <div class="achievement-actions">
-        ${compSortHtml}
-        ${compAddBtnHtml}
+  const modalHtml = `
+    <div class="modal show" id="completionist-modal">
+      <div class="modal-content" style="max-width: 1000px; max-height: 90vh; width: 95vw;">
+        <div class="modal-header">
+          <h2>Completionist Challenges - ${game.title}</h2>
+          <button class="modal-close" onclick="closeCompletionistModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="achievement-header">
+            <h3>🎯 ${game.title}</h3>
+            <div class="achievement-actions">
+              <select id="comp-sort" class="sort-select">
+                <option value="date">Sort by Date</option>
+                <option value="difficulty">Sort by Difficulty</option>
+              </select>
+              ${isLoggedIn ? '<button id="add-comp-btn" class="btn">+ Add Challenge</button>' : ''}
+            </div>
+          </div>
+          <div id="comp-modal-list" style="max-height: 500px; overflow-y: auto;"></div>
+        </div>
       </div>
     </div>
-    <div id="comp-list"></div>
   `;
   
-  await loadCompletionistAchievements(game.id);
+  // Remove existing modal if any
+  document.getElementById('completionist-modal')?.remove();
+  
+  // Add new modal
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  
+  await loadCompletionistModal(game.id);
   
   // Setup sort change handler
   document.getElementById('comp-sort')?.addEventListener('change', (e) => {
-    loadCompletionistAchievements(game.id, e.target.value);
+    loadCompletionistModal(game.id, e.target.value);
   });
   
   // Completionist add button
@@ -1027,6 +1271,174 @@ async function openCompletionist(game) {
         showCompletionistModal(game.id);
       });
     }
+  }
+}
+
+function closeCompletionistModal() {
+  document.getElementById('completionist-modal')?.remove();
+}
+
+async function loadCompletionistModal(gameId, sortBy = 'date') {
+  const res = await fetch(`/api/games/${gameId}/completionist?sort=${sortBy}`);
+  const achievements = await res.json();
+  const list = document.getElementById('comp-modal-list');
+  
+  if (achievements.length === 0) {
+    list.innerHTML = '<div class="empty-state">No completionist challenges yet</div>';
+    return;
+  }
+  
+  list.innerHTML = achievements.map(comp => {
+    const difficultyColor = comp.difficulty >= 80 ? '#ff4757' : 
+                           comp.difficulty >= 50 ? '#ffa502' : 
+                           '#2ed573';
+    
+    const editDeleteHtml = isLoggedIn ? `
+      <div class="comp-actions">
+        <button class="btn-icon edit-comp" data-id="${comp.id}" title="Edit">✏️</button>
+        <button class="btn-icon delete-comp" data-id="${comp.id}" title="Delete">🗑️</button>
+      </div>
+    ` : '';
+    
+    return `
+      <div class="completionist-card">
+        <div class="comp-header">
+          <div class="comp-title-section">
+            <div class="comp-title">${comp.title}</div>
+            ${comp.difficulty ? `
+              <div class="comp-difficulty" style="color: ${difficultyColor}">
+                Difficulty: ${comp.difficulty}/100
+              </div>
+            ` : ''}
+          </div>
+          ${editDeleteHtml}
+        </div>
+        
+        ${comp.description ? `<div class="comp-desc">${comp.description}</div>` : ''}
+        
+        <div class="comp-meta">
+          ${comp.time_to_complete ? `<span>⏱️ ${comp.time_to_complete}</span>` : ''}
+          ${comp.completion_date ? `<span>📅 ${comp.completion_date}</span>` : ''}
+          ${!comp.completion_date ? '<span>In Progress</span>' : ''}
+        </div>
+        
+        ${comp.notes ? `<div class="comp-notes">${comp.notes}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+  
+  if (isLoggedIn) {
+    // Edit handlers
+    list.querySelectorAll('.edit-comp').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.dataset.id);
+        const comp = achievements.find(c => c.id === id);
+        showCompletionistModal(gameId, comp);
+      });
+    });
+    
+    // Delete handlers
+    list.querySelectorAll('.delete-comp').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this challenge?')) return;
+        
+        const id = parseInt(btn.dataset.id);
+        await fetch(`/api/games/${gameId}/completionist/${id}`, {
+          method: 'DELETE'
+        });
+        
+        const sortBy = document.getElementById('comp-sort')?.value || 'date';
+        loadCompletionistModal(gameId, sortBy);
+      });
+    });
+  }
+}
+
+async function loadCompletionistModal(gameId, sortBy = 'date') {
+  const res = await fetch(`/api/games/${gameId}/completionist?sort=${sortBy}`);
+  const achievements = await res.json();
+  const list = document.getElementById('comp-modal-list');
+  
+  if (achievements.length === 0) {
+    list.innerHTML = '<div class="empty-state">No completionist challenges yet</div>';
+    return;
+  }
+  
+  list.innerHTML = achievements.map(comp => {
+    const difficultyColor = comp.difficulty >= 80 ? '#ff4757' : 
+                           comp.difficulty >= 50 ? '#ffa502' : 
+                           '#2ed573';
+    
+    const editDeleteHtml = isLoggedIn ? `
+      <div class="comp-actions">
+        <button class="btn-icon edit-comp" data-id="${comp.id}" title="Edit">✏️</button>
+        <button class="btn-icon delete-comp" data-id="${comp.id}" title="Delete">🗑️</button>
+      </div>
+    ` : '';
+    
+    return `
+      <div class="completionist-card">
+        <div class="comp-header">
+          <div class="comp-title-section">
+            <div class="comp-title">${comp.title}</div>
+            ${comp.difficulty ? `
+              <div class="comp-difficulty" style="color: ${difficultyColor}">
+                Difficulty: ${comp.difficulty}/100
+              </div>
+            ` : ''}
+          </div>
+          ${editDeleteHtml}
+        </div>
+        
+        ${comp.description ? `<div class="comp-desc">${comp.description}</div>` : ''}
+        
+        <div class="comp-meta">
+          ${comp.time_to_complete ? `<span>⏱️ ${comp.time_to_complete}</span>` : ''}
+          ${comp.completion_date ? `<span>📅 ${comp.completion_date}</span>` : ''}
+          ${!comp.completion_date ? '<span>In Progress</span>' : ''}
+        </div>
+        
+        ${comp.notes ? `<div class="comp-notes">${comp.notes}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+  
+  if (isLoggedIn) {
+    // Edit handlers
+    list.querySelectorAll('.edit-comp').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.dataset.id);
+        const comp = achievements.find(c => c.id === id);
+        showCompletionistModal(gameId, comp);
+      });
+    });
+    
+    // Delete handlers
+    list.querySelectorAll('.delete-comp').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this challenge?')) return;
+        
+        const id = parseInt(btn.dataset.id);
+        await fetch(`/api/games/${gameId}/completionist/${id}`, {
+          method: 'DELETE'
+        });
+        
+        const sortBy = document.getElementById('comp-sort')?.value || 'date';
+        loadCompletionistModal(gameId, sortBy);
+      });
+    });
+  }
+}
+
+function closeCompModal() {
+  document.getElementById('comp-modal')?.remove();
+  currentCompGame = null;
+  currentCompEdit = null;
+  
+  // Also refresh the completionist modal if it's open
+  if (currentCompGame && document.getElementById('completionist-modal')) {
+    const sortBy = document.getElementById('comp-sort')?.value || 'date';
+    loadCompletionistModal(currentCompGame, sortBy);
   }
 }
 
@@ -1337,20 +1749,21 @@ function showCompletionistModal(gameId, existing = null) {
           
           <div class="form-row">
             <div class="form-group">
-              <label>Difficulty (1-100) *</label>
-              <input type="number" id="comp-difficulty" min="1" max="100" placeholder="50" value="${existing?.difficulty || ''}" required />
-              <small style="opacity: 0.7; font-size: 12px;">Rate how hard this was to complete</small>
+              <label>Difficulty (1-100) - Optional</label>
+              <input type="number" id="comp-difficulty" min="1" max="100" placeholder="Leave blank if not started" value="${existing?.difficulty || ''}" />
+              <small style="opacity: 0.7; font-size: 12px;">Rate how hard this challenge is</small>
             </div>
             
             <div class="form-group">
-              <label>Time to Complete</label>
+              <label>Time to Complete - Optional</label>
               <input type="text" id="comp-time" placeholder="e.g., 50 hours, 3 months" value="${existing?.time_to_complete || ''}" />
             </div>
           </div>
           
           <div class="form-group">
-            <label>Completion Date</label>
+            <label>Completion Date - Optional</label>
             <input type="date" id="comp-date" value="${existing?.completion_date || ''}" />
+            <small style="opacity: 0.7; font-size: 12px;">Leave blank if not completed yet</small>
           </div>
           
           <div class="form-group">
@@ -1381,25 +1794,20 @@ function closeCompModal() {
 
 async function saveCompletionist() {
   const title = document.getElementById('comp-title').value.trim();
-  const difficulty = parseInt(document.getElementById('comp-difficulty').value);
   
-  if (!title || !difficulty) {
-    alert('Title and Difficulty are required');
-    return;
-  }
-  
-  if (difficulty < 1 || difficulty > 100) {
-    alert('Difficulty must be between 1 and 100');
+  if (!title) {
+    alert('Title is required');
     return;
   }
   
   const data = {
     title,
     description: document.getElementById('comp-desc').value.trim(),
-    difficulty,
+    difficulty: document.getElementById('comp-difficulty').value ? parseInt(document.getElementById('comp-difficulty').value) : null,
     time_to_complete: document.getElementById('comp-time').value.trim(),
     completion_date: document.getElementById('comp-date').value || null,
-    notes: document.getElementById('comp-notes').value.trim()
+    notes: document.getElementById('comp-notes').value.trim(),
+    completed: document.getElementById('comp-date').value ? 1 : 0 // Auto-set completed based on date
   };
   
   try {
@@ -2371,4 +2779,66 @@ function cancelTop10Edit() {
     document.getElementById('save-top10').style.display = 'none';
     document.getElementById('cancel-edit-top10').style.display = 'none';
     loadTop10(); // Reload the display view
+}
+
+// Load all completionist challenges
+async function loadAllChallenges() {
+  try {
+    const sortBy = document.getElementById('challenges-sort')?.value || 'date';
+    const filterBy = document.getElementById('challenges-filter')?.value || 'all';
+    
+    const res = await fetch(`/api/completionist/all?sort=${sortBy}&status=${filterBy}`);
+    const challenges = await res.json();
+    
+    const list = document.getElementById('challenges-list');
+    
+    if (challenges.length === 0) {
+      list.innerHTML = '<div class="empty-state">No challenges found. Add some completionist challenges to your games!</div>';
+      return;
+    }
+    
+    list.innerHTML = challenges.map(challenge => {
+      const difficultyColor = challenge.difficulty >= 80 ? '#ff4757' : 
+                             challenge.difficulty >= 50 ? '#ffa502' : 
+                             '#2ed573';
+      
+      const isCompleted = challenge.completed || challenge.completion_date;
+      
+      return `
+        <div class="completionist-card ${isCompleted ? 'completed' : ''}">
+          <div class="comp-header">
+            <div class="comp-title-section">
+              <div class="comp-title ${isCompleted ? 'completed-strike' : ''}">${challenge.title}</div>
+              <div class="comp-game-title" style="font-size: 14px; color: var(--accent); margin-top: 4px;">
+                ${challenge.game_title}
+              </div>
+              ${challenge.difficulty ? `
+                <div class="comp-difficulty" style="color: ${difficultyColor}; margin-top: 4px;">
+                  Difficulty: ${challenge.difficulty}/100
+                </div>
+              ` : ''}
+            </div>
+            <div class="comp-actions">
+              ${isCompleted ? '<span class="status-badge completed">Completed</span>' : '<span class="status-badge incomplete">In Progress</span>'}
+            </div>
+          </div>
+          
+          ${challenge.description ? `<div class="comp-desc">${challenge.description}</div>` : ''}
+          
+          <div class="comp-meta">
+            ${challenge.time_to_complete ? `<span>⏱️ ${challenge.time_to_complete}</span>` : ''}
+            ${challenge.completion_date ? `<span>📅 ${challenge.completion_date}</span>` : ''}
+            ${!challenge.completion_date && !challenge.time_to_complete ? '<span>Not Started</span>' : ''}
+          </div>
+          
+          ${challenge.notes ? `<div class="comp-notes">${challenge.notes}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+    
+  } catch (err) {
+    console.error('Error loading challenges:', err);
+    document.getElementById('challenges-list').innerHTML = 
+      '<div class="error">Error loading challenges. Please try again.</div>';
+  }
 }
