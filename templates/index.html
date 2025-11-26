@@ -72,15 +72,14 @@
         <!-- BATCH OPERATIONS BUTTONS (hidden by default) -->
         <div class="batch-actions" style="display: none;">
           <select id="batch-status">
-            <option value="">Select Status</option>
-            <option value="Playing">Playing</option>
-            <option value="Completed">Completed</option>
-            <option value="Backlog">Backlog</option>
-            <option value="Dropped">Dropped</option>
-            <option value="Wishlist">Wishlist</option>
+            <option value="">Auto-detect from achievements</option>
+            <option value="Playing">Force: Playing</option>
+            <option value="Completed">Force: Completed</option>
+            <option value="Backlog">Force: Backlog</option>
+            <option value="Dropped">Force: Dropped</option>
           </select>
-          <button id="batch-update" class="btn primary">Update Selected</button>
-          <button id="batch-delete" class="btn danger">Delete Selected</button>
+          <button id="batch-update" class="btn primary" title="Update from Steam + auto-set completion">🔄 Update from Steam</button>
+          <button id="batch-delete" class="btn danger">🗑️ Delete Selected</button>
           <button id="batch-cancel" class="btn secondary">Cancel</button>
         </div>
 

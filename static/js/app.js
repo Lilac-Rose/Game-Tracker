@@ -447,6 +447,7 @@ function setupTop10EventListeners() {
 
 // Initialize everything when auth is checked
 checkAuth().then(() => {
+  console.log('Starting app initialization...');
   loadSavedFilters();
   fetchGames();
   loadStats();
@@ -454,9 +455,17 @@ checkAuth().then(() => {
   setupTop10Modal();
   setupTop10Search();
   setupTop10EventListeners();
+  setupBatchOperations();
   
   // Set default sort option
   document.getElementById('sort-by').value = currentSort;
+  
+  console.log('App initialization complete');
+  
+  // Debug: Check batch actions setup
+  setTimeout(() => {
+    checkBatchActionsSetup();
+  }, 1000);
 });
 
 // Initialize event listeners for filtering
@@ -1932,27 +1941,64 @@ document.getElementById('batch-delete')?.addEventListener('click', batchDeleteGa
 document.getElementById('batch-cancel')?.addEventListener('click', cancelBatchMode);
 
 function toggleBatchMode() {
+  console.log('toggleBatchMode called, current batchMode:', batchMode);
   batchMode = !batchMode;
   selectedGames.clear();
   
   const batchActions = document.querySelector('.batch-actions');
   const toggleBtn = document.getElementById('toggle-batch-mode');
   
+  console.log('Batch actions element:', batchActions);
+  console.log('Toggle button:', toggleBtn);
+  
   if (batchMode) {
     document.body.classList.add('batch-mode');
-    batchActions.style.display = 'flex';
+    if (batchActions) {
+      batchActions.style.display = 'flex';
+      console.log('Batch actions should be visible now');
+    }
     if (toggleBtn) toggleBtn.textContent = 'Exit Batch Mode';
     console.log('Batch mode activated');
   } else {
     document.body.classList.remove('batch-mode');
-    batchActions.style.display = 'none';
+    if (batchActions) batchActions.style.display = 'none';
     if (toggleBtn) toggleBtn.textContent = 'Batch Operations';
     console.log('Batch mode deactivated');
   }
   
-  applySortingAndFiltering(); // Refresh to show/hide checkboxes
+  // Force re-render of games to show/hide checkboxes
+  applySortingAndFiltering();
 }
 
+function checkBatchActionsSetup() {
+  console.log('=== BATCH ACTIONS SETUP CHECK ===');
+  
+  const batchActions = document.querySelector('.batch-actions');
+  console.log('Batch actions container:', batchActions);
+  
+  const batchUpdate = document.getElementById('batch-update');
+  const batchDelete = document.getElementById('batch-delete');
+  const batchCancel = document.getElementById('batch-cancel');
+  
+  console.log('Batch update button:', batchUpdate);
+  console.log('Batch delete button:', batchDelete);
+  console.log('Batch cancel button:', batchCancel);
+  
+  // Check if event listeners are attached
+  if (batchUpdate) {
+    console.log('Batch update has click listener:', batchUpdate.hasAttribute('data-listener'));
+  }
+  if (batchDelete) {
+    console.log('Batch delete has click listener:', batchDelete.hasAttribute('data-listener'));
+  }
+  if (batchCancel) {
+    console.log('Batch cancel has click listener:', batchCancel.hasAttribute('data-listener'));
+  }
+  
+  console.log('Current batch mode:', batchMode);
+  console.log('Body has batch-mode class:', document.body.classList.contains('batch-mode'));
+  console.log('Batch actions display style:', batchActions ? batchActions.style.display : 'N/A');
+}
 
 function cancelBatchMode() {
   batchMode = false;
@@ -1966,38 +2012,77 @@ function cancelBatchMode() {
   applySortingAndFiltering();
 }
 
-
 async function batchUpdateStatus() {
   const newStatus = document.getElementById('batch-status').value;
-  if (!newStatus) {
-    alert('Please select a status');
-    return;
-  }
   
   if (selectedGames.size === 0) {
     alert('Please select at least one game');
     return;
   }
   
-  if (!confirm(`Update ${selectedGames.size} game(s) to "${newStatus}"?`)) return;
+  if (!confirm(`Update ${selectedGames.size} game(s)? This will refresh hours played AND achievements from Steam, and automatically set completion status based on achievements.`)) return;
+  
+  const btn = document.getElementById('batch-update');
+  const originalText = btn.textContent;
+  btn.textContent = 'Updating...';
+  btn.disabled = true;
   
   try {
-    const res = await fetch('/api/batch/update-status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        game_ids: Array.from(selectedGames),
-        status: newStatus
-      })
-    });
+    let updatedCount = 0;
+    let completedCount = 0;
+    let achievementsUpdated = 0;
     
-    if (res.ok) {
-      alert(`Updated ${selectedGames.size} game(s) successfully!`);
-      cancelBatchMode();
-      fetchGames(); // Refresh the list
+    // Process each selected game
+    for (const gameId of selectedGames) {
+      try {
+        console.log(`Updating game ${gameId} from Steam...`);
+        
+        const res = await fetch(`/api/steam/update-game/${gameId}`, { method: 'POST' });
+        const result = await res.json();
+        
+        if (result.success) {
+          updatedCount++;
+          
+          if (result.achievements_updated > 0) {
+            achievementsUpdated += result.achievements_updated;
+          }
+          
+          if (result.all_achievements_unlocked) {
+            completedCount++;
+            console.log(`Game ${gameId} completed all achievements on ${result.completion_date}`);
+          }
+          
+          // If a specific status was selected, update it
+          if (newStatus) {
+            await fetch(`/api/games/${gameId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: newStatus })
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`Error updating game ${gameId}:`, err);
+      }
     }
+    
+    let message = `Updated ${updatedCount} game(s) from Steam`;
+    if (achievementsUpdated > 0) {
+      message += ` - ${achievementsUpdated} achievements refreshed`;
+    }
+    if (completedCount > 0) {
+      message += ` - ${completedCount} games completed all achievements`;
+    }
+    
+    alert(message);
+    cancelBatchMode();
+    fetchGames(); // Refresh the list
+    
   } catch (err) {
     alert('Error updating games: ' + err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
   }
 }
 
@@ -2045,6 +2130,11 @@ function setupBatchButton() {
     // Add it to the games tab header
     const gamesTab = document.getElementById('tab-games');
     
+    if (!gamesTab) {
+      console.error('Games tab not found');
+      return;
+    }
+    
     // Create or find the tab actions container
     let actionsContainer = gamesTab.querySelector('.tab-actions');
     if (!actionsContainer) {
@@ -2061,8 +2151,60 @@ function setupBatchButton() {
     }
     
     actionsContainer.appendChild(batchToggle);
-    console.log('Batch operations button added');
+    console.log('Batch operations button added to tab');
   }
+}
+
+// ========== BATCH OPERATIONS INITIALIZATION ==========
+function setupBatchOperations() {
+    console.log('Setting up batch operations...');
+    
+    const batchUpdateBtn = document.getElementById('batch-update');
+    const batchDeleteBtn = document.getElementById('batch-delete');
+    const batchCancelBtn = document.getElementById('batch-cancel');
+    
+    console.log('Found batch update button:', !!batchUpdateBtn);
+    console.log('Found batch delete button:', !!batchDeleteBtn);
+    console.log('Found batch cancel button:', !!batchCancelBtn);
+    
+    // Remove existing listeners first
+    if (batchUpdateBtn) {
+        batchUpdateBtn.replaceWith(batchUpdateBtn.cloneNode(true));
+    }
+    if (batchDeleteBtn) {
+        batchDeleteBtn.replaceWith(batchDeleteBtn.cloneNode(true));
+    }
+    if (batchCancelBtn) {
+        batchCancelBtn.replaceWith(batchCancelBtn.cloneNode(true));
+    }
+    
+    // Get fresh references after cloning
+    const freshUpdate = document.getElementById('batch-update');
+    const freshDelete = document.getElementById('batch-delete');
+    const freshCancel = document.getElementById('batch-cancel');
+    
+    if (freshUpdate) {
+        freshUpdate.addEventListener('click', batchUpdateStatus);
+        freshUpdate.setAttribute('data-listener', 'attached');
+        console.log('Batch update listener added');
+    }
+    
+    if (freshDelete) {
+        freshDelete.addEventListener('click', batchDeleteGames);
+        freshDelete.setAttribute('data-listener', 'attached');
+        console.log('Batch delete listener added');
+    }
+    
+    if (freshCancel) {
+        freshCancel.addEventListener('click', cancelBatchMode);
+        freshCancel.setAttribute('data-listener', 'attached');
+        console.log('Batch cancel listener added');
+    }
+    
+    // Also set up the toggle button
+    setupBatchButton();
+    
+    console.log('Batch operations setup complete');
 }
 
 // Call this after loading games

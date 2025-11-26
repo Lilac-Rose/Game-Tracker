@@ -2616,3 +2616,64 @@ body.batch-mode .batch-actions {
     width: 100%;
   }
 }
+
+/* Add this to your CSS */
+.batch-actions {
+  display: none;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+body.batch-mode .batch-actions {
+  display: flex !important;
+}
+
+.btn.danger {
+  background: rgba(255, 71, 87, 0.2);
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+.btn.danger:hover {
+  background: rgba(255, 71, 87, 0.3);
+  transform: translateY(-1px);
+}
+
+/* Make sure batch actions are visible on mobile */
+@media (max-width: 768px) {
+  .batch-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    margin-left: 0;
+    margin-top: 12px;
+  }
+  
+  .batch-actions select,
+  .batch-actions button {
+    width: 100%;
+  }
+}
+
+/* Add tooltip styling */
+.batch-actions button[title] {
+  position: relative;
+}
+
+.batch-actions button[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
+  margin-bottom: 8px;
+}
