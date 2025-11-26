@@ -9,15 +9,17 @@
 <body>
   <div class="app">
     <aside class="sidebar">
-      <div class="brand">GameTracker</div>
+      <div class="brand">Lilac's Game Tracker</div>
       <nav>
-        <button class="nav-btn active" data-tab="games">Games Library</button>
-        <button class="nav-btn" data-tab="stats">Statistics</button>
-        <button class="nav-btn" data-tab="achievements">Achievements</button>
-        <button class="nav-btn" data-tab="completionist">Completionist</button>
-        <button class="nav-btn" data-tab="challenges">All Challenges</button>
-        <button class="nav-btn" data-tab="import">Import/Export</button>
-      </nav>
+          <button class="nav-btn" data-tab="games">Games Library</button>
+          <button class="nav-btn" data-tab="random">Random Game</button>
+          <button class="nav-btn" data-tab="top10">Lilac's Top 10</button>
+          <button class="nav-btn" data-tab="stats">Statistics</button>
+          <button class="nav-btn" data-tab="achievements">Achievements</button>
+          <button class="nav-btn" data-tab="completionist">Completionist</button>
+          <button class="nav-btn" data-tab="challenges">All Challenges</button>
+          <button class="nav-btn" data-tab="import">Import/Export</button>
+        </nav>
       <div class="sidebar-footer">
         <div class="auth-status">
           <span id="auth-indicator"></span>
@@ -39,6 +41,8 @@
           <option value="hours-asc">Hours (Low to High)</option>
           <option value="rating">Rating (High to Low)</option>
           <option value="rating-asc">Rating (Low to High)</option>
+          <option value="completion">Completion % (High to Low)</option>
+          <option value="completion-asc">Completion % (Low to High)</option>
           <option value="status">Status</option>
           <option value="platform">Platform</option>
         </select>
@@ -51,6 +55,7 @@
           <option value="Dropped">Dropped</option>
           <option value="Wishlist">Wishlist</option>
         </select>
+        
         <select id="filter-platform">
           <option value="">All Platforms</option>
           <option value="PC">PC</option>
@@ -62,10 +67,23 @@
         
         <button id="add-game" class="admin-only" style="display: none;">Add Game</button>
         <button id="import-steam-library" class="admin-only" style="display: none;">Import Steam</button>
-        
-        <!-- Update buttons -->
         <button id="update-all-steam" class="admin-only" style="display: none;">Update All from Steam</button>
-        
+
+        <!-- BATCH OPERATIONS BUTTONS (hidden by default) -->
+        <div class="batch-actions" style="display: none;">
+          <select id="batch-status">
+            <option value="">Select Status</option>
+            <option value="Playing">Playing</option>
+            <option value="Completed">Completed</option>
+            <option value="Backlog">Backlog</option>
+            <option value="Dropped">Dropped</option>
+            <option value="Wishlist">Wishlist</option>
+          </select>
+          <button id="batch-update" class="btn primary">Update Selected</button>
+          <button id="batch-delete" class="btn danger">Delete Selected</button>
+          <button id="batch-cancel" class="btn secondary">Cancel</button>
+        </div>
+
         <!-- Login controls (guest only) -->
         <div id="login-controls" class="guest-only" style="display: flex; gap: 8px;">
           <input type="password" id="password-input" placeholder="Password" style="width: 150px;" />
@@ -81,10 +99,78 @@
         <div id="tab-games" class="tab active">
           <div class="grid" id="games-list"></div>
         </div>
+
+        <div id="tab-random" class="tab">
+          <div class="random-game-header">
+            <h2>Random Game Picker</h2>
+            <p>Can't decide what to play? Let fate choose for you!</p>
+          </div>
+          
+          <div class="random-filters">
+            <div class="filter-group">
+              <label>Filter by Status:</label>
+              <select id="random-filter-status">
+                <option value="all">All Games</option>
+                <option value="Playing">Currently Playing</option>
+                <option value="Backlog">Backlog</option>
+                <option value="Completed">Completed</option>
+                <option value="Dropped">Dropped</option>
+              </select>
+            </div>
+            
+            <div class="filter-group">
+              <label>Filter by Platform:</label>
+              <select id="random-filter-platform">
+                <option value="all">All Platforms</option>
+                <option value="PC">PC</option>
+                <option value="PlayStation">PlayStation</option>
+                <option value="Xbox">Xbox</option>
+                <option value="Nintendo Switch">Nintendo Switch</option>
+                <option value="Mobile">Mobile</option>
+              </select>
+            </div>
+            
+            <div class="filter-group">
+              <label>Max Playtime:</label>
+              <select id="random-filter-hours">
+                <option value="0">Any Length</option>
+                <option value="10">Under 10h</option>
+                <option value="20">Under 20h</option>
+                <option value="50">Under 50h</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="random-result" id="random-result">
+            <div class="empty-state">Click the button below to get a random game!</div>
+          </div>
+          
+          <div class="random-actions">
+            <button id="pick-random-game" class="btn primary large">🎮 Pick Random Game</button>
+            <button id="reroll-random" class="btn secondary" style="display: none;">🔄 Reroll</button>
+          </div>
+        </div>
         
+        <div id="tab-top10" class="tab">
+          <div class="top10-header">
+            <h2>Lilac's Top 10 Games</h2>
+            <p>My personal favorite games from my library</p>
+          </div>
+          
+          <div class="top10-actions admin-only" style="display: none;">
+            <button id="edit-top10" class="btn">✏️ Edit Top 10</button>
+            <button id="save-top10" class="btn primary" style="display: none;">💾 Save Order</button>
+            <button id="cancel-edit-top10" class="btn secondary" style="display: none;">❌ Cancel</button>
+          </div>
+          
+          <div id="top10-list" class="top10-list">
+            <div class="empty-state">No top 10 games set yet. Click "Edit Top 10" to get started!</div>
+          </div>
+        </div>
+
         <!-- Statistics Tab -->
         <div id="tab-stats" class="tab">
-          <h2>Your Gaming Statistics</h2>
+          <h2>Lilac's Gaming Statistics</h2>
           <div class="stats-grid">
             <div class="stat-card">
               <div class="stat-value" id="stat-total">0</div>
@@ -270,6 +356,38 @@
       <div class="modal-footer">
         <button id="cancel-game" class="btn secondary">Cancel</button>
         <button id="save-game" class="btn primary">Save Game</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top 10 Edit Modal -->
+  <div id="top10-modal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <h2>Edit Lilac's Top 10</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="top10-edit-instructions">
+          <p>Select games from your library and arrange them in your preferred order.</p>
+        </div>
+        
+        <div class="top10-edit-container">
+          <div class="available-games-section">
+            <h3>Available Games</h3>
+            <input type="text" id="top10-search" placeholder="Search games..." class="search-input">
+            <div id="available-games" class="available-games-list"></div>
+          </div>
+          
+          <div class="top10-selection-section">
+            <h3>Your Top 10</h3>
+            <div id="top10-selection" class="top10-selection-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancel-top10" class="btn secondary">Cancel</button>
+        <button id="save-top10-modal" class="btn primary">Save Top 10</button>
       </div>
     </div>
   </div>

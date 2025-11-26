@@ -50,6 +50,14 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         is_favorite INTEGER DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS top10_games (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER UNIQUE,
+        position INTEGER NOT NULL,
+        why_i_love_it TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS steam_import_status (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         steam_app_id INTEGER UNIQUE,
@@ -589,6 +597,73 @@ def import_steam_library():
         traceback.print_exc()
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
 
+@app.route('/api/top10', methods=['GET', 'POST', 'PUT'])
+def api_top10():
+    if request.method == 'GET':
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT t.*, g.title, g.platform, g.cover_url, g.steam_app_id, 
+                   g.hours_played, g.rating, g.status
+            FROM top10_games t
+            JOIN games g ON t.game_id = g.id
+            ORDER BY t.position ASC
+        ''')
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    
+    elif request.method == 'POST':
+        if not session.get('logged_in'):
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        data = request.json
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Clear existing top 10
+        cur.execute('DELETE FROM top10_games')
+        
+        # Insert new top 10
+        for item in data:
+            cur.execute(
+                'INSERT INTO top10_games (game_id, position, why_i_love_it) VALUES (?,?,?)',
+                (item['game_id'], item['position'], item.get('why_i_love_it', ''))
+            )
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    
+    elif request.method == 'PUT':
+        if not session.get('logged_in'):
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        data = request.json
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute(
+            'UPDATE top10_games SET position=?, why_i_love_it=? WHERE game_id=?',
+            (data.get('position'), data.get('why_i_love_it'), data.get('game_id'))
+        )
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+
+@app.route('/api/top10/<int:game_id>', methods=['DELETE'])
+def api_delete_top10(game_id):
+    if not session.get('logged_in'):
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM top10_games WHERE game_id=?', (game_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
 @app.route('/api/fix-image-associations', methods=['POST'])
 def fix_image_associations():
     """Fix incorrect image associations between games and covers"""
@@ -826,7 +901,12 @@ def api_games():
     cur.execute('''
         SELECT g.*, 
                COUNT(CASE WHEN a.unlocked=1 THEN 1 END) as unlocked_achievements,
-               COUNT(a.id) as total_achievements
+               COUNT(a.id) as total_achievements,
+               CASE 
+                 WHEN COUNT(a.id) > 0 THEN 
+                   ROUND((COUNT(CASE WHEN a.unlocked=1 THEN 1 END) * 100.0 / COUNT(a.id)), 1)
+                 ELSE 0 
+               END as completion_percentage
         FROM games g
         LEFT JOIN achievements a ON g.id = a.game_id
         GROUP BY g.id
@@ -843,7 +923,8 @@ def api_games():
         if game['total_achievements'] > 0:
             game['achievement_progress'] = {
                 'unlocked_achievements': game['unlocked_achievements'],
-                'total_achievements': game['total_achievements']
+                'total_achievements': game['total_achievements'],
+                'completion_percentage': game['completion_percentage']
             }
         else:
             game['achievement_progress'] = None
@@ -985,7 +1066,7 @@ def steam_game_details(app_id):
 
 @app.route('/api/steam/update-game/<int:game_id>', methods=['POST'])
 def update_game_from_steam(game_id):
-    """Update a single game's data from Steam (hours only, no achievements by default)"""
+    """Update a single game's data from Steam (including achievements)"""
     if not session.get('logged_in'):
         return jsonify({'error': 'Authentication required'}), 401
     
@@ -997,7 +1078,7 @@ def update_game_from_steam(game_id):
         cur = conn.cursor()
         
         # Get the game
-        cur.execute('SELECT steam_app_id, title FROM games WHERE id=?', (game_id,))
+        cur.execute('SELECT steam_app_id, title, status FROM games WHERE id=?', (game_id,))
         game = cur.fetchone()
         
         if not game:
@@ -1028,7 +1109,65 @@ def update_game_from_steam(game_id):
             cur.execute('UPDATE games SET hours_played=? WHERE id=?', (hours_played, game_id))
             print(f"  → Updated hours: {hours_played}h")
         
-        # REMOVED achievement updating - achievements should be handled individually
+        # Update achievements and check for completion
+        achievements_updated = 0
+        all_achievements_unlocked = False
+        completion_date = None
+        latest_achievement_date = None
+        
+        steam_achievements = get_steam_achievements(app_id)
+        if steam_achievements and len(steam_achievements) > 0:
+            # Clear existing achievements to avoid duplicates
+            cur.execute('DELETE FROM achievements WHERE game_id=?', (game_id,))
+            print(f"  → Cleared existing achievements")
+            
+            # Track achievement dates to find the most recent one
+            achievement_dates = []
+            
+            for ach in steam_achievements:
+                unlock_date = ach.get('unlock_date')
+                if unlock_date:
+                    achievement_dates.append(unlock_date)
+                
+                cur.execute(
+                    'INSERT INTO achievements (game_id, title, description, date, unlocked, icon_url) VALUES (?,?,?,?,?,?)',
+                    (game_id, ach.get('name'), ach.get('description'), 
+                     unlock_date, ach.get('achieved', 0), ach.get('icon'))
+                )
+            
+            achievements_updated = len(steam_achievements)
+            print(f"  → Updated {achievements_updated} achievements")
+            
+            # Check if all achievements are unlocked
+            unlocked_count = sum(1 for ach in steam_achievements if ach.get('achieved', 0))
+            if unlocked_count == len(steam_achievements) and len(steam_achievements) > 0:
+                all_achievements_unlocked = True
+                print(f"  → All {unlocked_count} achievements unlocked!")
+                
+                # Find the most recent achievement date
+                if achievement_dates:
+                    # Convert dates to datetime objects for comparison
+                    from datetime import datetime
+                    try:
+                        date_objects = [datetime.strptime(date, '%Y-%m-%d') for date in achievement_dates if date]
+                        if date_objects:
+                            latest_date = max(date_objects)
+                            completion_date = latest_date.strftime('%Y-%m-%d')
+                            latest_achievement_date = completion_date
+                            print(f"  → Most recent achievement: {completion_date}")
+                    except Exception as date_err:
+                        print(f"  → Error parsing dates: {date_err}")
+                        # Fallback to today's date
+                        completion_date = datetime.now().strftime('%Y-%m-%d')
+                else:
+                    # No dates available, use today
+                    from datetime import datetime
+                    completion_date = datetime.now().strftime('%Y-%m-%d')
+                
+                # Update game status and completion date
+                cur.execute('UPDATE games SET status=?, completion_date=? WHERE id=?', 
+                           ('Completed', completion_date, game_id))
+                print(f"  → Set game as completed on {completion_date}")
         
         conn.commit()
         conn.close()
@@ -1036,7 +1175,10 @@ def update_game_from_steam(game_id):
         return jsonify({
             'success': True,
             'hours_updated': hours_played is not None,
-            'message': f'Updated {game["title"]} hours from Steam'
+            'achievements_updated': achievements_updated,
+            'all_achievements_unlocked': all_achievements_unlocked,
+            'completion_date': completion_date,
+            'message': f'Updated {game["title"]} from Steam'
         })
         
     except Exception as e:
@@ -1115,6 +1257,104 @@ def update_all_games_from_steam():
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Update failed: {str(e)}'}), 500
+
+@app.route('/api/random-game')
+def api_random_game():
+    status_filter = request.args.get('status', 'all')
+    platform_filter = request.args.get('platform', 'all')
+    max_hours = request.args.get('max_hours', 0, type=int)
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    query = '''
+        SELECT g.*, 
+               COUNT(CASE WHEN a.unlocked=1 THEN 1 END) as unlocked_achievements,
+               COUNT(a.id) as total_achievements
+        FROM games g
+        LEFT JOIN achievements a ON g.id = a.game_id
+        WHERE 1=1
+    '''
+    params = []
+    
+    if status_filter != 'all':
+        query += ' AND g.status = ?'
+        params.append(status_filter)
+    
+    if platform_filter != 'all':
+        query += ' AND g.platform = ?'
+        params.append(platform_filter)
+    
+    if max_hours > 0:
+        query += ' AND (g.hours_played <= ? OR g.hours_played IS NULL)'
+        params.append(max_hours)
+    
+    query += ' GROUP BY g.id'
+    
+    cur.execute(query, params)
+    games = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    
+    if not games:
+        return jsonify({'error': 'No games match your filters'}), 404
+    
+    import random
+    random_game = random.choice(games)
+    
+    # Add tags
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT tag FROM tags WHERE game_id=?', (random_game['id'],))
+    random_game['tags'] = [r['tag'] for r in cur.fetchall()]
+    conn.close()
+    
+    return jsonify(random_game)
+
+@app.route('/api/batch/update-status', methods=['POST'])
+def api_batch_update_status():
+    if not session.get('logged_in'):
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    data = request.json
+    game_ids = data.get('game_ids', [])
+    new_status = data.get('status')
+    
+    if not game_ids or not new_status:
+        return jsonify({'error': 'Missing game_ids or status'}), 400
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    placeholders = ','.join(['?'] * len(game_ids))
+    cur.execute(f'UPDATE games SET status=? WHERE id IN ({placeholders})', 
+                [new_status] + game_ids)
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'updated': len(game_ids)})
+
+@app.route('/api/batch/delete', methods=['POST'])
+def api_batch_delete():
+    if not session.get('logged_in'):
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    data = request.json
+    game_ids = data.get('game_ids', [])
+    
+    if not game_ids:
+        return jsonify({'error': 'Missing game_ids'}), 400
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    placeholders = ','.join(['?'] * len(game_ids))
+    cur.execute(f'DELETE FROM games WHERE id IN ({placeholders})', game_ids)
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'deleted': len(game_ids)})
 
 @app.route('/api/stats')
 def api_stats():

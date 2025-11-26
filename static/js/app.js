@@ -8,6 +8,10 @@ let currentFilters = {
   platform: '',
   search: ''
 };
+let batchMode = false;
+let selectedGames = new Set();
+let top10Games = [];
+let isEditingTop10 = false;
 
 function loadSavedFilters() {
   const savedStatus = localStorage.getItem('gameTracker_filter_status');
@@ -163,7 +167,41 @@ function renderGames(games) {
       cover.style.backgroundImage = `url(${game.cover_url})`;
     }
     
-    // Update card head to include favorite star
+    // BATCH SELECTION CHECKBOX
+    if (batchMode) {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'select-checkbox';
+      checkbox.checked = selectedGames.has(game.id);
+      checkbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          selectedGames.add(game.id);
+        } else {
+          selectedGames.delete(game.id);
+        }
+        // Add selected class for visual feedback
+        const card = checkbox.closest('.game-card');
+        if (e.target.checked) {
+          card.classList.add('selected');
+        } else {
+          card.classList.remove('selected');
+        }
+      });
+      
+      // Position the checkbox in the top-left corner
+      checkbox.style.position = 'absolute';
+      checkbox.style.top = '8px';
+      checkbox.style.left = '8px';
+      checkbox.style.zIndex = '10';
+      checkbox.style.width = '18px';
+      checkbox.style.height = '18px';
+      checkbox.style.accentColor = 'var(--accent)';
+      
+      cover.style.position = 'relative';
+      cover.appendChild(checkbox);
+    }
+    
+    // Card head with favorite star
     const cardHead = el.querySelector('.card-head');
     cardHead.innerHTML = `
       <div class="game-title-wrapper">
@@ -182,10 +220,10 @@ function renderGames(games) {
     el.querySelector('.game-status').textContent = game.status || '';
     el.querySelector('.game-status').className = `game-status badge status-${(game.status || '').toLowerCase()}`;
     
-    // Update card row: Hours on left, rating on right
+    // Card row: Hours on left, rating on right
     const cardRow = el.querySelector('.card-row');
     
-    // Hours played - moved to left
+    // Hours played
     const hours = el.querySelector('.game-hours');
     if (game.hours_played) {
       hours.textContent = `Time: ${game.hours_played}h`;
@@ -193,7 +231,7 @@ function renderGames(games) {
       hours.textContent = 'Time: 0h';
     }
     
-    // Rating stars - moved to right
+    // Rating stars
     const rating = el.querySelector('.game-rating');
     if (game.rating) {
       rating.textContent = '★'.repeat(game.rating) + '☆'.repeat(5 - game.rating);
@@ -209,10 +247,9 @@ function renderGames(games) {
       ).join('');
     }
     
-    // Achievement progress bar (only show if game has achievements)
+    // Achievement progress bar
     const cardBody = el.querySelector('.card-body');
     
-    // Check if game has achievement progress data and achievements exist
     if (game.achievement_progress && game.achievement_progress.total_achievements > 0) {
       const unlocked = game.achievement_progress.unlocked_achievements || 0;
       const total = game.achievement_progress.total_achievements;
@@ -228,6 +265,7 @@ function renderGames(games) {
         <div class="progress-bar-mini">
           <div class="progress-fill-mini" style="width: ${percentage}%"></div>
         </div>
+        <div class="completion-percentage">Completion: ${percentage}%</div>
       `;
       
       // Insert progress bar before the card actions
@@ -280,17 +318,31 @@ async function updateGameFromSteam(gameId) {
     return;
   }
   
-  if (!confirm('Update this game from Steam? This will refresh hours played only - achievements will NOT be updated.')) return;
+  if (!confirm('Update this game from Steam? This will refresh hours played AND achievements. Existing achievements will be replaced.')) return;
   
   try {
     const res = await fetch(`/api/steam/update-game/${gameId}`, { method: 'POST' });
     const result = await res.json();
     
     if (result.success) {
-      let message = `Updated game hours from Steam`;
+      let message = `Updated game from Steam`;
       if (result.hours_updated) message += ' - hours refreshed';
+      if (result.achievements_updated > 0) message += ` - ${result.achievements_updated} achievements updated`;
+      
+      // Check if we should set completion date
+      if (result.all_achievements_unlocked) {
+        message += ` - All achievements unlocked! Completion date set to ${result.completion_date}`;
+        
+        // Update the local game data
+        const gameIndex = allGames.findIndex(g => g.id === gameId);
+        if (gameIndex !== -1) {
+          allGames[gameIndex].status = 'Completed';
+          allGames[gameIndex].completion_date = result.completion_date;
+        }
+      }
+      
       alert(message);
-      fetchGames();
+      fetchGames(); // Refresh the list
     } else {
       alert('Failed to update game: ' + result.error);
     }
@@ -353,13 +405,57 @@ document.getElementById('search').addEventListener('input', filterGames);
 document.getElementById('filter-status').addEventListener('change', filterGames);
 document.getElementById('filter-platform').addEventListener('change', filterGames);
 
-// Initialize
+document.getElementById('edit-top10').addEventListener('click', openTop10Editor);
+document.getElementById('cancel-edit-top10').addEventListener('click', cancelTop10Edit);
+document.getElementById('save-top10').addEventListener('click', saveTop10);
+document.getElementById('save-top10-modal').addEventListener('click', saveTop10);
+
+function setupTop10EventListeners() {
+    // Wait for DOM to be ready and elements to exist
+    setTimeout(() => {
+        const editBtn = document.getElementById('edit-top10');
+        const cancelEditBtn = document.getElementById('cancel-edit-top10');
+        const saveBtn = document.getElementById('save-top10');
+        const saveModalBtn = document.getElementById('save-top10-modal');
+        
+        console.log('Setting up Top 10 event listeners...');
+        console.log('Edit button:', editBtn);
+        console.log('Cancel button:', cancelEditBtn);
+        console.log('Save button:', saveBtn);
+        console.log('Save modal button:', saveModalBtn);
+        
+        if (editBtn) {
+            editBtn.addEventListener('click', openTop10Editor);
+            console.log('Edit button listener added');
+        } else {
+            console.error('Edit button not found!');
+        }
+        
+        if (cancelEditBtn) {
+            cancelEditBtn.addEventListener('click', cancelTop10Edit);
+        }
+        
+        if (saveBtn) {
+            saveBtn.addEventListener('click', saveTop10);
+        }
+        
+        if (saveModalBtn) {
+            saveModalBtn.addEventListener('click', saveTop10);
+        }
+    }, 100);
+}
+
+// Initialize everything when auth is checked
 checkAuth().then(() => {
   loadSavedFilters();
   fetchGames();
   loadStats();
+  loadTop10();
+  setupTop10Modal();
+  setupTop10Search();
+  setupTop10EventListeners();
   
-  // Set sort option from localStorage
+  // Set default sort option
   document.getElementById('sort-by').value = currentSort;
 });
 
@@ -405,6 +501,17 @@ function applySortingAndFiltering() {
       
       case 'rating-asc':
         return (a.rating || 0) - (b.rating || 0);
+      
+      // NEW: Completion sorting cases
+      case 'completion':
+        const aComp = a.achievement_progress?.completion_percentage || 0;
+        const bComp = b.achievement_progress?.completion_percentage || 0;
+        return bComp - aComp;
+      
+      case 'completion-asc':
+        const aCompAsc = a.achievement_progress?.completion_percentage || 0;
+        const bCompAsc = b.achievement_progress?.completion_percentage || 0;
+        return aCompAsc - bCompAsc;
       
       case 'status':
         return (a.status || '').localeCompare(b.status || '');
@@ -571,7 +678,9 @@ async function importAchievementsForGame(gameId, steamAppId) {
       return;
     }
     
-    // Delete existing achievements first to avoid duplicates
+    if (!confirm(`Import ${achievements.length} achievements from Steam? This will replace ALL existing achievements for this game.`)) return;
+    
+    // Clear existing achievements first to avoid duplicates
     const existingAchRes = await fetch(`/api/games/${gameId}/achievements`);
     const existingAchievements = await existingAchRes.json();
     
@@ -812,11 +921,22 @@ async function openAchievements(game) {
         const res = await fetch(`/api/steam/achievements/${game.steam_app_id}`);
         const achievements = await res.json();
         
-        if (!confirm(`Import ${achievements.length} achievements from Steam?`)) return;
+        if (!confirm(`Import ${achievements.length} achievements from Steam? This will replace ALL existing achievements for this game.`)) return;
         
         importBtn.disabled = true;
         importBtn.textContent = 'Importing...';
         
+        // Clear existing achievements first
+        const existingAchRes = await fetch(`/api/games/${game.id}/achievements`);
+        const existingAchievements = await existingAchRes.json();
+        
+        for (const ach of existingAchievements) {
+          await fetch(`/api/games/${game.id}/achievements/${ach.id}`, {
+            method: 'DELETE'
+          });
+        }
+        
+        // Import new achievements
         for (const ach of achievements) {
           await fetch(`/api/games/${game.id}/achievements`, {
             method: 'POST',
@@ -1416,3 +1536,678 @@ document.getElementById('cleanup-images')?.addEventListener('click', async () =>
     btn.disabled = false;
   }
 });
+
+// ========== RANDOM GAME PICKER ==========
+document.getElementById('pick-random-game').addEventListener('click', pickRandomGame);
+document.getElementById('reroll-random').addEventListener('click', pickRandomGame);
+
+async function pickRandomGame() {
+  const status = document.getElementById('random-filter-status').value;
+  const platform = document.getElementById('random-filter-platform').value;
+  const maxHours = document.getElementById('random-filter-hours').value;
+  
+  try {
+    const url = new URL('/api/random-game', window.location.origin);
+    if (status !== 'all') url.searchParams.append('status', status);
+    if (platform !== 'all') url.searchParams.append('platform', platform);
+    if (maxHours !== '0') url.searchParams.append('max_hours', maxHours);
+    
+    const res = await fetch(url);
+    const game = await res.json();
+    
+    if (res.status === 404) {
+      document.getElementById('random-result').innerHTML = `
+        <div class="empty-state">${game.error}</div>
+      `;
+      return;
+    }
+    
+    displayRandomGame(game);
+    document.getElementById('reroll-random').style.display = '';
+    
+  } catch (err) {
+    document.getElementById('random-result').innerHTML = `
+      <div class="error">Error picking random game: ${err.message}</div>
+    `;
+  }
+}
+
+function displayRandomGame(game) {
+  // Get achievement data - check both possible locations
+  let achievementText = 'No achievements';
+  let unlocked = 0;
+  let total = 0;
+  
+  if (game.achievement_progress) {
+    unlocked = game.achievement_progress.unlocked_achievements || 0;
+    total = game.achievement_progress.total_achievements || 0;
+  } else if (game.unlocked_achievements !== undefined && game.total_achievements !== undefined) {
+    unlocked = game.unlocked_achievements;
+    total = game.total_achievements;
+  }
+  
+  if (total > 0) {
+    const percentage = Math.round((unlocked / total) * 100);
+    achievementText = `${unlocked}/${total} achievements (${percentage}%)`;
+  }
+  
+  document.getElementById('random-result').innerHTML = `
+    <div class="random-game-card">
+      ${game.cover_url ? `<img src="${game.cover_url}" alt="${game.title}" style="width: 200px; height: 100px; object-fit: cover; border-radius: 8px; margin-bottom: 16px;">` : ''}
+      <h3>${game.title}</h3>
+      <div class="random-game-meta">
+        <span class="badge">${game.platform || 'No platform'}</span>
+        <span class="badge status-${(game.status || '').toLowerCase()}">${game.status || 'No status'}</span>
+        <span>${game.hours_played || 0}h</span>
+      </div>
+      <p style="color: var(--text-muted); margin-bottom: 16px;">${achievementText}</p>
+      ${game.notes ? `<p style="font-style: italic;">"${game.notes}"</p>` : ''}
+      <div class="random-game-actions" style="margin-top: 16px;">
+        <button class="btn small" onclick="openAchievementsFromRandom(${game.id})">View Achievements</button>
+        ${game.steam_app_id && isLoggedIn ? `<button class="btn small secondary" onclick="updateGameFromSteam(${game.id})">Update from Steam</button>` : ''}
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('reroll-random').style.display = '';
+}
+
+// Helper function to open achievements from random game
+function openAchievementsFromRandom(gameId) {
+  const game = allGames.find(g => g.id === gameId);
+  if (game) {
+    // Switch to achievements tab and open this game's achievements
+    document.querySelector('[data-tab="achievements"]').click();
+    setTimeout(() => {
+      openAchievements(game);
+    }, 100);
+  }
+}
+
+// Top 10 Modal Management
+function setupTop10Modal() {
+    const modal = document.getElementById('top10-modal');
+    const closeBtn = modal.querySelector('.modal-close');
+    const cancelBtn = document.getElementById('cancel-top10');
+    
+    // Remove existing event listeners to prevent duplicates
+    closeBtn.replaceWith(closeBtn.cloneNode(true));
+    cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+    
+    // Add new event listeners
+    modal.querySelector('.modal-close').addEventListener('click', closeTop10Modal);
+    document.getElementById('cancel-top10').addEventListener('click', closeTop10Modal);
+    
+    // Close modal when clicking outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeTop10Modal();
+        }
+    });
+    
+    // Close modal with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('show')) {
+            closeTop10Modal();
+        }
+    });
+}
+
+function closeTop10Modal() {
+    const modal = document.getElementById('top10-modal');
+    modal.classList.remove('show');
+    cancelTop10Edit(); // Reset editing state
+}
+
+function openTop10Editor() {
+    console.log('openTop10Editor called'); // Debug log
+    
+    if (!isLoggedIn) {
+        alert('Please login to edit Top 10');
+        return;
+    }
+    
+    const modal = document.getElementById('top10-modal');
+    if (!modal) {
+        console.error('Top 10 modal not found!');
+        alert('Error: Top 10 modal not found');
+        return;
+    }
+    
+    isEditingTop10 = true;
+    
+    // Hide/show the right buttons
+    const editBtn = document.getElementById('edit-top10');
+    const saveBtn = document.getElementById('save-top10');
+    const cancelEditBtn = document.getElementById('cancel-edit-top10');
+    
+    if (editBtn) editBtn.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = '';
+    if (cancelEditBtn) cancelEditBtn.style.display = '';
+    
+    // Clear the available games list initially
+    const availableGames = document.getElementById('available-games');
+    if (availableGames) {
+        availableGames.innerHTML = '<div class="empty-state">Search for games to add to your Top 10</div>';
+    }
+    
+    const searchInput = document.getElementById('top10-search');
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    
+    console.log('Opening modal...');
+    modal.classList.add('show');
+}
+
+// Available games for Top 10 editor - Search-based
+// Available games for Top 10 editor - Search-based
+function setupTop10Search() {
+    const searchInput = document.getElementById('top10-search');
+    
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.trim().toLowerCase();
+        
+        if (searchTerm.length < 2) {
+            // Show empty state for short searches
+            document.getElementById('available-games').innerHTML = '<div class="empty-state">Type at least 2 characters to search</div>';
+            return;
+        }
+        
+        searchAvailableGames(searchTerm);
+    });
+    
+    // Add debounced search for better performance
+    let searchTimeout;
+    searchInput.addEventListener('input', (e) => {
+        clearTimeout(searchTimeout);
+        const searchTerm = e.target.value.trim().toLowerCase();
+        
+        if (searchTerm.length < 2) {
+            document.getElementById('available-games').innerHTML = '<div class="empty-state">Type at least 2 characters to search</div>';
+            return;
+        }
+        
+        searchTimeout = setTimeout(() => {
+            searchAvailableGames(searchTerm);
+        }, 300);
+    });
+}
+
+function searchAvailableGames(searchTerm) {
+    const availableList = document.getElementById('available-games');
+    
+    // Show loading state
+    availableList.innerHTML = '<div class="loading">Searching games...</div>';
+    
+    // Filter games based on search term
+    const filteredGames = allGames.filter(game => 
+        !top10Games.some(top10 => top10.game_id === game.id) &&
+        (game.title.toLowerCase().includes(searchTerm) ||
+         (game.tags || []).some(tag => tag.toLowerCase().includes(searchTerm)) ||
+         (game.platform || '').toLowerCase().includes(searchTerm))
+    );
+    
+    if (filteredGames.length === 0) {
+        availableList.innerHTML = '<div class="empty-state">No games found matching "' + searchTerm + '"</div>';
+        return;
+    }
+    
+    // Display search results
+    availableList.innerHTML = filteredGames.map(game => `
+        <div class="available-game-item" data-game-id="${game.id}">
+            <div style="flex: 1;">
+                <strong>${game.title}</strong>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                    ${game.platform} • ${game.hours_played || 0}h • ${game.status}
+                    ${game.tags && game.tags.length > 0 ? `• ${game.tags.slice(0, 2).join(', ')}` : ''}
+                </div>
+            </div>
+            <button class="btn small" style="flex-shrink: 0;">Add</button>
+        </div>
+    `).join('');
+    
+    // Add click handlers to search results
+    availableList.querySelectorAll('.available-game-item').forEach(item => {
+        const addBtn = item.querySelector('button');
+        const gameId = parseInt(item.dataset.gameId);
+        
+        addBtn.addEventListener('click', () => {
+            addGameToTop10(gameId);
+        });
+        
+        // Also make the whole item clickable
+        item.addEventListener('click', (e) => {
+            if (e.target !== addBtn) {
+                addGameToTop10(gameId);
+            }
+        });
+    });
+}
+
+function addGameToTop10(gameId) {
+    if (top10Games.length >= 10) {
+        alert('Top 10 is full! Remove a game first.');
+        return;
+    }
+    
+    const game = allGames.find(g => g.id === gameId);
+    if (game) {
+        top10Games.push({
+            game_id: game.id,
+            title: game.title,
+            platform: game.platform,
+            hours_played: game.hours_played,
+            rating: game.rating,
+            cover_url: game.cover_url,
+            why_i_love_it: ''
+        });
+        
+        // Refresh both lists
+        renderTop10Selection();
+        
+        // Clear search and show success message
+        document.getElementById('top10-search').value = '';
+        document.getElementById('available-games').innerHTML = '<div class="success">Game added! Search for more games...</div>';
+    }
+}
+
+function renderTop10Selection() {
+    const selectionList = document.getElementById('top10-selection');
+    
+    if (top10Games.length === 0) {
+        selectionList.innerHTML = '<div class="empty-state">No games in your Top 10 yet. Search and add games above!</div>';
+        return;
+    }
+    
+    selectionList.innerHTML = top10Games.map((game, index) => `
+        <div class="top10-selection-item" data-game-id="${game.game_id}">
+            <div class="drag-handle" style="cursor: move;">⋮⋮</div>
+            <div class="game-info" style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    ${game.cover_url ? `<img src="${game.cover_url}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;">` : ''}
+                    <div>
+                        <strong>#${index + 1}. ${game.title}</strong>
+                        <div style="font-size: 12px; color: var(--text-muted);">
+                            ${game.platform} • ${game.hours_played || 0}h
+                        </div>
+                    </div>
+                </div>
+                <textarea 
+                    class="why-i-love-it" 
+                    placeholder="Why I love this game..."
+                    style="width: 100%; margin-top: 8px; padding: 8px; border: var(--thin-border); border-radius: 4px; background: rgba(0,0,0,0.3); color: var(--text-color); font-size: 12px; resize: vertical; min-height: 60px;"
+                    oninput="updateTop10Reason(${game.game_id}, this.value)"
+                >${game.why_i_love_it || ''}</textarea>
+            </div>
+            <button class="remove-game btn-icon" onclick="removeFromTop10(${game.game_id})" title="Remove">🗑️</button>
+        </div>
+    `).join('');
+}
+
+function updateTop10Reason(gameId, reason) {
+    const game = top10Games.find(g => g.game_id === gameId);
+    if (game) {
+        game.why_i_love_it = reason;
+    }
+}
+
+
+function moveTop10Up(index) {
+  if (index > 0) {
+    [top10Games[index], top10Games[index - 1]] = [top10Games[index - 1], top10Games[index]];
+    renderTop10();
+  }
+}
+
+function moveTop10Down(index) {
+  if (index < top10Games.length - 1) {
+    [top10Games[index], top10Games[index + 1]] = [top10Games[index + 1], top10Games[index]];
+    renderTop10();
+  }
+}
+
+function removeFromTop10(gameId) {
+  top10Games = top10Games.filter(game => game.game_id !== gameId);
+  renderTop10();
+}
+
+// Available games for Top 10 editor
+async function loadAvailableGames() {
+  const searchInput = document.getElementById('top10-search');
+  const availableList = document.getElementById('available-games');
+  
+  const filteredGames = allGames.filter(game => 
+    !top10Games.some(top10 => top10.game_id === game.id)
+  );
+  
+  availableList.innerHTML = filteredGames.map(game => `
+    <div class="available-game-item" data-game-id="${game.id}">
+      <div>
+        <strong>${game.title}</strong>
+        <div style="font-size: 12px; color: var(--text-muted);">
+          ${game.platform} • ${game.hours_played || 0}h • ${game.status}
+        </div>
+      </div>
+    </div>
+  `).join('');
+  
+  // Add click handlers
+  availableList.querySelectorAll('.available-game-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const gameId = parseInt(item.dataset.gameId);
+      const game = allGames.find(g => g.id === gameId);
+      if (game && top10Games.length < 10) {
+        top10Games.push({
+          game_id: game.id,
+          title: game.title,
+          platform: game.platform,
+          hours_played: game.hours_played,
+          rating: game.rating,
+          why_i_love_it: ''
+        });
+        renderTop10();
+        loadAvailableGames(); // Refresh available games
+      } else if (top10Games.length >= 10) {
+        alert('Top 10 is full! Remove a game first.');
+      }
+    });
+  });
+  
+  // Search functionality
+  searchInput.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    const items = availableList.querySelectorAll('.available-game-item');
+    
+    items.forEach(item => {
+      const gameTitle = item.querySelector('strong').textContent.toLowerCase();
+      item.style.display = gameTitle.includes(searchTerm) ? 'flex' : 'none';
+    });
+  });
+}
+
+// ========== BATCH OPERATIONS ==========
+document.getElementById('batch-update')?.addEventListener('click', batchUpdateStatus);
+document.getElementById('batch-delete')?.addEventListener('click', batchDeleteGames);
+document.getElementById('batch-cancel')?.addEventListener('click', cancelBatchMode);
+
+function toggleBatchMode() {
+  batchMode = !batchMode;
+  selectedGames.clear();
+  
+  const batchActions = document.querySelector('.batch-actions');
+  const toggleBtn = document.getElementById('toggle-batch-mode');
+  
+  if (batchMode) {
+    document.body.classList.add('batch-mode');
+    batchActions.style.display = 'flex';
+    if (toggleBtn) toggleBtn.textContent = 'Exit Batch Mode';
+    console.log('Batch mode activated');
+  } else {
+    document.body.classList.remove('batch-mode');
+    batchActions.style.display = 'none';
+    if (toggleBtn) toggleBtn.textContent = 'Batch Operations';
+    console.log('Batch mode deactivated');
+  }
+  
+  applySortingAndFiltering(); // Refresh to show/hide checkboxes
+}
+
+
+function cancelBatchMode() {
+  batchMode = false;
+  selectedGames.clear();
+  document.body.classList.remove('batch-mode');
+  document.querySelector('.batch-actions').style.display = 'none';
+  
+  const toggleBtn = document.getElementById('toggle-batch-mode');
+  if (toggleBtn) toggleBtn.textContent = 'Batch Operations';
+  
+  applySortingAndFiltering();
+}
+
+
+async function batchUpdateStatus() {
+  const newStatus = document.getElementById('batch-status').value;
+  if (!newStatus) {
+    alert('Please select a status');
+    return;
+  }
+  
+  if (selectedGames.size === 0) {
+    alert('Please select at least one game');
+    return;
+  }
+  
+  if (!confirm(`Update ${selectedGames.size} game(s) to "${newStatus}"?`)) return;
+  
+  try {
+    const res = await fetch('/api/batch/update-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        game_ids: Array.from(selectedGames),
+        status: newStatus
+      })
+    });
+    
+    if (res.ok) {
+      alert(`Updated ${selectedGames.size} game(s) successfully!`);
+      cancelBatchMode();
+      fetchGames(); // Refresh the list
+    }
+  } catch (err) {
+    alert('Error updating games: ' + err.message);
+  }
+}
+
+async function batchDeleteGames() {
+  if (selectedGames.size === 0) {
+    alert('Please select at least one game');
+    return;
+  }
+  
+  if (!confirm(`Permanently delete ${selectedGames.size} game(s)? This cannot be undone!`)) return;
+  
+  try {
+    const res = await fetch('/api/batch/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        game_ids: Array.from(selectedGames)
+      })
+    });
+    
+    if (res.ok) {
+      alert(`Deleted ${selectedGames.size} game(s) successfully!`);
+      cancelBatchMode();
+      fetchGames(); // Refresh the list
+    }
+  } catch (err) {
+    alert('Error deleting games: ' + err.message);
+  }
+}
+
+function setupBatchButton() {
+  // Remove existing batch button if any
+  const existingBtn = document.getElementById('toggle-batch-mode');
+  if (existingBtn) {
+    existingBtn.remove();
+  }
+  
+  if (isLoggedIn) {
+    const batchToggle = document.createElement('button');
+    batchToggle.id = 'toggle-batch-mode';
+    batchToggle.className = 'btn';
+    batchToggle.textContent = 'Batch Operations';
+    batchToggle.addEventListener('click', toggleBatchMode);
+    
+    // Add it to the games tab header
+    const gamesTab = document.getElementById('tab-games');
+    
+    // Create or find the tab actions container
+    let actionsContainer = gamesTab.querySelector('.tab-actions');
+    if (!actionsContainer) {
+      actionsContainer = document.createElement('div');
+      actionsContainer.className = 'tab-actions';
+      
+      // Insert after the h2 or at the top if no h2
+      const existingH2 = gamesTab.querySelector('h2');
+      if (existingH2) {
+        existingH2.insertAdjacentElement('afterend', actionsContainer);
+      } else {
+        gamesTab.insertBefore(actionsContainer, gamesTab.firstChild);
+      }
+    }
+    
+    actionsContainer.appendChild(batchToggle);
+    console.log('Batch operations button added');
+  }
+}
+
+// Call this after loading games
+async function fetchGames() {
+  const res = await fetch('/api/games');
+  allGames = await res.json();
+  applySortingAndFiltering();
+  setupBatchButton();
+}
+
+async function loadTop10() {
+    try {
+        const res = await fetch('/api/top10');
+        top10Games = await res.json();
+        renderTop10();
+    } catch (err) {
+        console.error('Error loading Top 10:', err);
+    }
+}
+
+function renderTop10() {
+    const list = document.getElementById('top10-list');
+    
+    if (!list) {
+        console.error('top10-list element not found');
+        return;
+    }
+    
+    if (!top10Games || top10Games.length === 0) {
+        list.innerHTML = '<div class="empty-state">No top 10 games set yet. Click "Edit Top 10" to get started!</div>';
+        return;
+    }
+    
+    list.innerHTML = top10Games.map((game, index) => `
+        <div class="top10-game-card">
+            <div class="top10-rank">#${index + 1}</div>
+            ${game.cover_url ? `<img src="${game.cover_url}" class="top10-cover" alt="${game.title}" />` : ''}
+            <div class="top10-content">
+                <h3>${game.title}</h3>
+                <div class="top10-meta">
+                    <span class="platform">${game.platform}</span>
+                    <span class="hours">${game.hours_played || 0}h</span>
+                    ${game.rating ? `<span class="rating">${'★'.repeat(game.rating)}${'☆'.repeat(5 - game.rating)}</span>` : ''}
+                </div>
+                ${game.why_i_love_it ? `<p class="why-i-love-it">"${game.why_i_love_it}"</p>` : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function openTop10Editor() {
+    console.log('openTop10Editor called');
+    
+    if (!isLoggedIn) {
+        alert('Please login to edit Top 10');
+        return;
+    }
+    
+    isEditingTop10 = true;
+    document.getElementById('edit-top10').style.display = 'none';
+    document.getElementById('save-top10').style.display = '';
+    document.getElementById('cancel-edit-top10').style.display = '';
+    
+    document.getElementById('available-games').innerHTML = '<div class="empty-state">Search for games to add to your Top 10</div>';
+    document.getElementById('top10-search').value = '';
+    
+    document.getElementById('top10-modal').classList.add('show');
+}
+
+function cancelTop10Edit() {
+    isEditingTop10 = false;
+    document.getElementById('edit-top10').style.display = '';
+    document.getElementById('save-top10').style.display = 'none';
+    document.getElementById('cancel-edit-top10').style.display = 'none';
+    loadTop10();
+}
+
+async function saveTop10() {
+    try {
+        console.log('Saving Top 10:', top10Games);
+        
+        const gamesToSave = top10Games.map((game, index) => ({
+            game_id: game.game_id,
+            position: index + 1,
+            why_i_love_it: game.why_i_love_it || ''
+        }));
+        
+        console.log('Transformed data:', gamesToSave);
+        
+        const response = await fetch('/api/top10', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(gamesToSave)
+        });
+
+        console.log('Response status:', response.status);
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('Save successful:', result);
+            alert('Top 10 saved successfully!');
+            closeTop10Modal();
+            cancelTop10Edit();
+            loadTop10();
+        } else {
+            const errorText = await response.text();
+            console.error('Server error:', errorText);
+            alert('Error saving Top 10: ' + errorText);
+        }
+    } catch (err) {
+        console.error('Network error:', err);
+        alert('Network error saving Top 10: ' + err.message);
+    }
+}
+
+function removeFromTop10(gameId) {
+    top10Games = top10Games.filter(game => game.game_id !== gameId);
+    renderTop10Selection();
+}
+
+function setupTop10EventListeners() {
+    // Wait for elements to exist
+    setTimeout(() => {
+        const editBtn = document.getElementById('edit-top10');
+        const cancelEditBtn = document.getElementById('cancel-edit-top10');
+        const saveBtn = document.getElementById('save-top10');
+        const saveModalBtn = document.getElementById('save-top10-modal');
+        
+        console.log('Setting up Top 10 event listeners...');
+        
+        if (editBtn) {
+            editBtn.addEventListener('click', openTop10Editor);
+            console.log('Edit button listener added');
+        }
+        
+        if (cancelEditBtn) cancelEditBtn.addEventListener('click', cancelTop10Edit);
+        if (saveBtn) saveBtn.addEventListener('click', saveTop10);
+        if (saveModalBtn) saveModalBtn.addEventListener('click', saveTop10);
+    }, 500);
+}
+
+function cancelTop10Edit() {
+    isEditingTop10 = false;
+    document.getElementById('edit-top10').style.display = '';
+    document.getElementById('save-top10').style.display = 'none';
+    document.getElementById('cancel-edit-top10').style.display = 'none';
+    loadTop10(); // Reload the display view
+}
