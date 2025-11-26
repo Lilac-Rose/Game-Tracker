@@ -208,7 +208,7 @@ function renderGames(games) {
         ${isLoggedIn ? `
           <button class="favorite-star ${game.is_favorite ? 'favorited' : ''}" 
                   data-id="${game.id}" title="${game.is_favorite ? 'Remove from favorites' : 'Add to favorites'}">
-            ${game.is_favorite ? '⭐' : '☆'}
+            ${game.is_favorite ? '★' : '☆'}
           </button>
         ` : ''}
         <strong class="game-title">${game.title}</strong>
@@ -226,7 +226,7 @@ function renderGames(games) {
     // Hours played
     const hours = el.querySelector('.game-hours');
     if (game.hours_played) {
-      hours.textContent = `Time: ${game.hours_played}h`;
+      hours.textContent = `${game.hours_played}h`;
     } else {
       hours.textContent = 'Time: 0h';
     }
@@ -257,6 +257,25 @@ function renderGames(games) {
       
       const progressBar = document.createElement('div');
       progressBar.className = 'achievement-progress-mini';
+      
+      // Show completion status
+      let completionStatus = '';
+      if (game.completion_date && game.status === 'Completed') {
+        completionStatus = `
+          <div class="completion-status completed">
+            <span class="completion-text">Completed: ${game.completion_date}</span>
+          </div>
+        `;
+      } else if (percentage === 100) {
+        completionStatus = `
+          <div class="completion-status full-progress">
+            <span class="completion-text">100% Complete</span>
+          </div>
+        `;
+      } else {
+        completionStatus = `<div class="completion-percentage">${percentage}% Complete</div>`;
+      }
+      
       progressBar.innerHTML = `
         <div class="progress-info">
           <span>Achievements: ${unlocked}/${total}</span>
@@ -265,7 +284,7 @@ function renderGames(games) {
         <div class="progress-bar-mini">
           <div class="progress-fill-mini" style="width: ${percentage}%"></div>
         </div>
-        <div class="completion-percentage">Completion: ${percentage}%</div>
+        ${completionStatus}
       `;
       
       // Insert progress bar before the card actions

@@ -2677,3 +2677,63 @@ body.batch-mode .batch-actions {
   z-index: 1000;
   margin-bottom: 8px;
 }
+
+.completion-status {
+  margin-top: 4px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 8px; /* More rounded corners */
+  font-weight: 600;
+  text-align: center;
+  position: relative;
+}
+
+.completion-status.completed::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px solid;
+  border-image: linear-gradient(90deg, var(--success-color), rgba(46, 213, 115, 0.3), var(--success-color)) 1;
+  border-radius: 8px; /* Match the parent border radius */
+  pointer-events: none;
+}
+
+.completion-status.completed {
+  background: rgba(46, 213, 115, 0.1);
+  color: var(--success-color);
+}
+
+.completion-status.full-progress::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px solid;
+  border-image: linear-gradient(90deg, #ffd700, rgba(255, 215, 0, 0.3), #ffd700) 1;
+  border-radius: 8px; /* Match the parent border radius */
+  pointer-events: none;
+}
+
+.completion-status.full-progress {
+  background: rgba(255, 215, 0, 0.1);
+  color: #ffd700;
+}
+
+.completion-percentage {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-align: center;
+  border-radius: 6px; /* Slightly rounded for the percentage too */
+}
+
+.completion-text {
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+}
