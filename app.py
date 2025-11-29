@@ -1204,6 +1204,7 @@ def update_all_games_from_steam():
         steam_games = cur.fetchall()
         
         if not steam_games:
+            conn.close()
             return jsonify({'error': 'No Steam games found'}), 400
         
         print(f"Updating {len(steam_games)} games from Steam (hours only)...")
@@ -1213,9 +1214,16 @@ def update_all_games_from_steam():
         games_response = steam_api_call_with_rate_limit(games_url)
         
         if games_response.status_code != 200:
-            return jsonify({'error': 'Failed to fetch Steam library'}), 400
+            conn.close()
+            return jsonify({'error': f'Steam API returned status {games_response.status_code}'}), 500
         
-        games_data = games_response.json()
+        # Parse JSON response safely
+        try:
+            games_data = games_response.json()
+        except ValueError as e:
+            conn.close()
+            return jsonify({'error': f'Invalid JSON from Steam API: {str(e)}'}), 500
+        
         steam_library = {game['appid']: game for game in games_data.get('response', {}).get('games', [])}
         
         updated_count = 0
@@ -1241,7 +1249,7 @@ def update_all_games_from_steam():
             
             # Small delay to avoid rate limiting
             if i < len(steam_games) - 1:
-                time.sleep(0.5)  # Reduced delay since we're only getting hours
+                time.sleep(0.5)
         
         conn.commit()
         conn.close()
@@ -1253,6 +1261,12 @@ def update_all_games_from_steam():
             'message': f'Updated hours for {hours_updated} games from Steam'
         })
         
+    except requests.exceptions.Timeout:
+        print("Steam API request timed out")
+        return jsonify({'error': 'Steam API request timed out. Please try again later.'}), 408
+    except requests.exceptions.ConnectionError:
+        print("Cannot connect to Steam API")
+        return jsonify({'error': 'Cannot connect to Steam API. Check your internet connection.'}), 503
     except Exception as e:
         import traceback
         traceback.print_exc()

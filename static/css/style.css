@@ -81,51 +81,6 @@ html, body {
   opacity: 0.3;
 }
 
-/* Responsive sidebar */
-@media (max-width: 900px) {
-  .sidebar {
-    flex-direction: row;
-    gap: 12px;
-    align-items: center;
-    padding: 12px;
-  }
-
-  .brand {
-    margin-bottom: 0;
-    font-size: 18px;
-    padding-bottom: 0;
-  }
-
-  .brand::after {
-    display: none;
-  }
-
-  nav {
-    flex-direction: row;
-    flex: 1;
-    overflow-x: auto;
-    gap: 8px;
-  }
-
-  .nav-btn {
-    padding: 10px 12px;
-    font-size: 13px;
-    white-space: nowrap;
-    text-align: center;
-    flex: 1;
-    min-width: max-content;
-  }
-
-  .nav-btn:hover,
-  .nav-btn.active {
-    transform: translateY(-2px);
-  }
-
-  .sidebar-footer {
-    display: none;
-  }
-}
-
 .brand { 
   font-weight: 700; 
   font-size: 20px; 
@@ -214,10 +169,6 @@ nav {
 }
 
 .nav-btn.active::before {
-  transform: scaleY(1);
-}
-
-.nav-btn.active::before {
   background: linear-gradient(90deg, transparent, rgba(0, 152, 205, 0.2), transparent);
   left: 100%;
 }
@@ -277,8 +228,8 @@ nav {
 
 .topbar { 
   display: flex; 
-  gap: 12px; 
-  padding: 12px; 
+  gap: 8px; 
+  padding: 8px; 
   align-items: center;
   background: var(--card-bg);
   border-radius: var(--card-radius);
@@ -288,7 +239,8 @@ nav {
 }
 
 .topbar input, .topbar select { 
-  padding: 10px 14px; 
+  padding: 8px 12px; 
+  height: 36px;
   border-radius: 6px; 
   border: var(--thin-border); 
   background: rgba(0, 0, 0, 0.3); 
@@ -312,38 +264,9 @@ nav {
   border-color: var(--accent);
 }
 
-/* Sorting controls */
-#sort-by {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  color: white;
-  padding: 8px 12px;
-  font-size: 14px;
-  min-width: 160px;
-}
-
-#sort-by:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.sort-select {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  color: white;
-  padding: 6px 10px;
-  font-size: 13px;
-}
-
-.sort-select option {
-  background: var(--main-bg);
-  color: var(--text-color);
-}
-
 .topbar button { 
-  padding: 10px 16px; 
+  padding: 8px 12px; 
+  height: 36px;
   border-radius: 6px; 
   border: none; 
   background: var(--accent); 
@@ -420,129 +343,6 @@ nav {
   border-color: rgba(0, 152, 205, 0.4);
 }
 
-.game-info-header {
-  flex: 1;
-}
-
-.game-info-header h2 {
-  margin-bottom: 8px;
-  color: var(--accent);
-}
-
-.game-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-}
-
-.game-meta-row .game-hours {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.game-meta-row .game-status {
-  font-size: 11px;
-  padding: 3px 8px;
-}
-
-.game-meta-row .game-rating {
-  color: #ffd700;
-  font-size: 13px;
-}
-
-.achievement-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-/* Stats page completion items */
-.completion-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: var(--card-bg);
-  border: var(--thin-border);
-  border-radius: var(--card-radius);
-  margin-bottom: 10px;
-}
-
-.completion-cover {
-  width: 80px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.completion-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.completion-title {
-  font-weight: 600;
-  margin-bottom: 6px;
-  font-size: 15px;
-}
-
-.completion-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 4px;
-  font-size: 13px;
-}
-
-.completion-hours {
-  color: var(--text-muted);
-}
-
-.completion-rating {
-  color: #ffd700;
-}
-
-.completion-date {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .achievement-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .achievement-actions {
-    justify-content: flex-start;
-  }
-  
-  .game-meta-row {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  
-  .completion-item {
-    flex-direction: column;
-    align-items: flex-start;
-    text-align: left;
-  }
-  
-  .completion-cover {
-    width: 100%;
-    height: 80px;
-    object-fit: cover;
-  }
-  
-  .completion-meta {
-    justify-content: space-between;
-    width: 100%;
-  }
-}
-
 .card:hover::before {
   opacity: 1;
 }
@@ -595,7 +395,6 @@ nav {
   gap: 8px;
 }
 
-/* Favorite star */
 .favorite-star {
   background: none;
   border: none;
@@ -613,29 +412,6 @@ nav {
 }
 
 .favorite-star.favorited {
-  color: #ffd700;
-  filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.4));
-}
-
-.favorite-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 18px;
-  padding: 4px;
-  color: rgba(255, 215, 0, 0.4);
-  transition: all 0.2s;
-  margin-right: 4px;
-  flex-shrink: 0;
-}
-
-.favorite-btn:hover {
-  transform: scale(1.2);
-  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
-  color: #ffd700;
-}
-
-.favorite-btn.favorited {
   color: #ffd700;
   filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.4));
 }
@@ -688,10 +464,6 @@ nav {
   font-size: 13px;
   margin-top: auto;
   min-height: 20px;
-}
-
-.card-row .badge {
-  flex-shrink: 0;
 }
 
 .badge{
@@ -751,20 +523,6 @@ nav {
 .game-hours::before {
   content: "Time: ";
   opacity: 0.7;
-}
-
-.achievement-progress-mini .progress-info span:first-child::before {
-  content: "Achievements: ";
-  opacity: 0.7;
-}
-
-.achievement-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 12px;
 }
 
 .card-actions { 
@@ -829,6 +587,32 @@ nav {
 
 .btn.secondary{
   background: rgba(255, 255, 255, 0.05);
+}
+
+.btn.warning {
+  background: rgba(255, 165, 2, 0.2);
+  border-color: var(--warning-color);
+  color: var(--warning-color);
+}
+
+.btn.warning:hover {
+  background: rgba(255, 165, 2, 0.3);
+}
+
+.btn.danger {
+  background: rgba(255, 71, 87, 0.2);
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+.btn.danger:hover {
+  background: rgba(255, 71, 87, 0.3);
+}
+
+.btn.large {
+  padding: 14px 24px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* Floating Action Button */
@@ -1153,19 +937,27 @@ nav {
   border-radius: 16px;
   overflow: hidden;
   margin-bottom: 8px;
+  position: relative;
 }
 
 .achievement-progress-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--accent), var(--success-color));
-  transition: width 0.3s ease;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 12px;
-  color: white;
-  font-weight: 600;
-  font-size: 14px;
+  border-radius: 16px;
+  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.achievement-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer 2s infinite;
 }
 
 .achievement-progress-text {
@@ -1330,18 +1122,13 @@ nav {
 }
 
 .completion-date {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
   transition: color 0.3s ease;
 }
 
 .completion-item:hover .completion-date {
   color: var(--text-color);
-}
-
-.completion-date {
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 /* Achievements */
@@ -1407,7 +1194,6 @@ nav {
   transition: transform 0.3s ease;
 }
 
-
 .achievement-actions {
   display: flex;
   gap: 8px;
@@ -1424,49 +1210,6 @@ nav {
     opacity: 1;
     transform: translateX(0);
   }
-}
-
-.achievement-progress-bar-container {
-  margin: 20px 0;
-  animation: fadeIn 0.6s ease 0.3s both;
-}
-
-.achievement-progress-bar {
-  width: 100%;
-  height: 32px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 16px;
-  overflow: hidden;
-  margin-bottom: 8px;
-  position: relative;
-}
-
-.achievement-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--success-color));
-  border-radius: 16px;
-  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-}
-
-.achievement-progress-fill::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-  animation: shimmer 2s infinite;
-}
-
-.achievement-progress-text {
-  text-align: center;
-  font-size: 14px;
-  color: var(--text-muted);
-  font-weight: 500;
-  animation: fadeIn 0.6s ease 0.4s both;
 }
 
 .sort-select {
@@ -1522,12 +1265,21 @@ nav {
 
 .achievement-card.locked {
   opacity: 0.5;
+  border-left: 4px solid var(--text-muted);
 }
 
+.achievement-card.unlocked {
+  border-left: 4px solid var(--success-color);
+}
 
 .achievement-card.locked:hover {
   opacity: 0.8;
   transform: translateY(-2px);
+  border-left-color: var(--accent);
+}
+
+.achievement-card.unlocked:hover {
+  border-left-color: var(--success-color);
 }
 
 .ach-icon {
@@ -1602,23 +1354,6 @@ nav {
   border-color: var(--accent);
   transform: scale(1.1);
   color: var(--accent);
-}
-
-/* Achievement Unlocked/Locked States */
-.achievement-card.unlocked {
-  border-left: 4px solid var(--success-color);
-}
-
-.achievement-card.locked {
-  border-left: 4px solid var(--text-muted);
-}
-
-.achievement-card.unlocked:hover {
-  border-left-color: var(--success-color);
-}
-
-.achievement-card.locked:hover {
-  border-left-color: var(--accent);
 }
 
 /* Completionist Achievements */
@@ -1720,88 +1455,6 @@ textarea:focus {
   margin-top: 12px;
 }
 
-/* Responsive */
-@media (max-width: 900px) {
-  .app {
-    grid-template-columns: 1fr;
-    padding: 12px;
-  }
-
-  .sidebar {
-    flex-direction: row;
-    gap: 12px;
-    align-items: center;
-    padding: 12px;
-  }
-
-  .brand {
-    margin-bottom: 0;
-  }
-
-  nav {
-    flex-direction: row;
-    flex: 1;
-    overflow-x: auto;
-  }
-
-  .sidebar-footer {
-    display: none;
-  }
-
-  .grid {
-    grid-template-columns: 1fr;
-  }
-
-  .topbar {
-    flex-wrap: wrap;
-  }
-
-  #sort-by {
-    min-width: 140px;
-  }
-
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-
-  .comp-header {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .comp-actions {
-    order: -1;
-    align-self: flex-start;
-  }
-
-  .fab {
-    bottom: 20px;
-    right: 20px;
-    width: 48px;
-    height: 48px;
-    font-size: 24px;
-  }
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.02);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--accent-transparent);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
-}
-
 .import-option {
   display: flex;
   align-items: center;
@@ -1832,29 +1485,7 @@ textarea:focus {
   accent-color: var(--accent);
 }
 
-/* Make topbar more compact */
-.topbar {
-  display: flex;
-  gap: 8px;
-  padding: 8px;
-  align-items: center;
-  background: var(--card-bg);
-  border-radius: var(--card-radius);
-  border: var(--thin-border);
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.topbar input, .topbar select { 
-  padding: 8px 12px; 
-  height: 36px;
-}
-
-.topbar button { 
-  padding: 8px 12px; 
-  height: 36px;
-}
-
+/* Progress bars */
 .achievement-progress-mini {
   margin: 8px 0;
   font-size: 12px;
@@ -1867,6 +1498,11 @@ textarea:focus {
   margin-bottom: 4px;
   color: var(--text-muted);
   font-weight: 500;
+}
+
+.achievement-progress-mini .progress-info span:first-child::before {
+  content: "Achievements: ";
+  opacity: 0.7;
 }
 
 .progress-bar-mini {
@@ -1885,7 +1521,6 @@ textarea:focus {
   position: relative;
   overflow: hidden;
 }
-
 
 .progress-fill-mini::after {
   content: '';
@@ -1930,8 +1565,43 @@ textarea:focus {
 
 .filter-group label {
   font-size: 14px;
-  color: var(--text-muted);
-  font-weight: 500;
+  color: var(--accent);
+  font-weight: 600;
+  text-align: center;
+}
+
+.random-filters select {
+  padding: 10px 12px;
+  border: var(--thin-border);
+  border-radius: 8px;
+  background: rgba(15, 15, 31, 0.8);
+  color: var(--text-color);
+  font-size: 14px;
+  transition: all 0.3s ease;
+  min-width: 150px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%230098CD' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+}
+
+.random-filters select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-transparent);
+}
+
+.random-filters select:hover {
+  border-color: var(--accent);
+  background-color: rgba(0, 152, 205, 0.1);
+}
+
+.random-filters select option {
+  background: var(--main-bg);
+  color: var(--text-color);
+  padding: 8px 12px;
 }
 
 .random-result {
@@ -1973,12 +1643,6 @@ textarea:focus {
   justify-content: center;
 }
 
-.btn.large {
-  padding: 14px 24px;
-  font-size: 16px;
-  font-weight: 600;
-}
-
 /* Top 10 Tab */
 .top10-header {
   text-align: center;
@@ -1996,10 +1660,6 @@ textarea:focus {
   justify-content: center;
   margin-bottom: 24px;
   flex-wrap: wrap;
-}
-
-.top10-actions .btn {
-  margin: 0;
 }
 
 .top10-list {
@@ -2034,7 +1694,7 @@ textarea:focus {
   text-align: center;
   flex-shrink: 0;
   margin-right: 8px;
-  line-height: 1; /* Better vertical alignment */
+  line-height: 1;
 }
 
 .top10-content {
@@ -2072,64 +1732,47 @@ textarea:focus {
 }
 
 .top10-cover {
-  width: 120px; /* Wider to match banner aspect ratio */
-  height: 56px; /* Shorter height for banner format */
+  width: 120px;
+  height: 56px;
   object-fit: cover;
   border-radius: 6px;
   flex-shrink: 0;
 }
 
-.top10-game-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 16px; /* Slightly reduced padding */
-  background: var(--card-bg);
-  border: var(--thin-border);
-  border-radius: var(--card-radius);
-  transition: all 0.3s ease;
-  position: relative;
-}
-
-.top10-game-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  border-color: var(--accent);
-}
-
-.top10-game-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 8px;
-}
-
-.top10-game-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.top10-game-meta {
-  display: flex;
-  gap: 12px;
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-bottom: 12px;
-}
-
-.top10-why {
-  background: rgba(0, 152, 205, 0.1);
-  padding: 12px;
-  border-radius: 6px;
-  border-left: 3px solid var(--accent);
-  font-size: 14px;
+.why-i-love-it {
+  font-style: italic;
+  color: var(--text-color);
+  margin: 0;
   line-height: 1.5;
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  background: rgba(0, 152, 205, 0.05);
+  padding: 12px;
+  border-radius: 4px;
 }
 
-.top10-edit-actions {
-  display: flex;
-  gap: 6px;
+.why-i-love-it:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.why-i-love-it-textarea {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: var(--thin-border);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-color);
+  font-size: 12px;
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+.why-i-love-it-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* Top 10 Edit Modal */
@@ -2182,17 +1825,13 @@ textarea:focus {
   background: var(--card-bg);
   display: flex;
   align-items: flex-start;
-  gap: 8px; /* Reduced gap */
+  gap: 8px;
 }
 
 .available-game-item:hover,
 .top10-selection-item:hover {
   background: var(--accent-transparent);
-}
-
-.available-game-item:last-child,
-.top10-selection-item:last-child {
-  border-bottom: none;
+  border-color: var(--accent);
 }
 
 .top10-selection-item {
@@ -2206,13 +1845,13 @@ textarea:focus {
   flex: 1;
 }
 
-.top10-selection-item .drag-handle {
+.drag-handle {
   color: var(--text-muted);
   cursor: move;
   padding: 4px;
   user-select: none;
   flex-shrink: 0;
-  margin-right: 4px; /* Reduced margin */
+  margin-right: 4px;
 }
 
 .top10-selection-item .remove-game {
@@ -2223,401 +1862,6 @@ textarea:focus {
 }
 
 /* Batch Operations */
-.batch-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-left: auto;
-}
-
-.batch-actions select {
-  padding: 8px 12px;
-  border: var(--thin-border);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.3);
-  color: var(--text-color);
-}
-
-.btn.warning {
-  background: rgba(255, 165, 2, 0.2);
-  border-color: var(--warning-color);
-  color: var(--warning-color);
-}
-
-.btn.warning:hover {
-  background: rgba(255, 165, 2, 0.3);
-}
-
-.btn.danger {
-  background: rgba(255, 71, 87, 0.2);
-  border-color: var(--error-color);
-  color: var(--error-color);
-}
-
-.btn.danger:hover {
-  background: rgba(255, 71, 87, 0.3);
-}
-
-/* Game selection for batch operations */
-.game-card.selected {
-  border-color: var(--accent);
-  background: var(--accent-transparent);
-}
-
-.game-card .select-checkbox {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  width: 20px;
-  height: 20px;
-  z-index: 2;
-}
-
-/* Completion percentage in game cards */
-.completion-percentage {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
-/* Animations */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .random-filters {
-    flex-direction: column;
-    align-items: center;
-  }
-  
-  .filter-group {
-    width: 100%;
-    max-width: 300px;
-  }
-  
-  .top10-edit-container {
-    grid-template-columns: 1fr;
-    height: auto;
-  }
-  
-  .batch-actions {
-    flex-wrap: wrap;
-    justify-content: center;
-    margin-left: 0;
-    margin-top: 12px;
-    width: 100%;
-  }
-}
-
-/* Random Game Filter Styling */
-.random-filters select {
-  padding: 10px 12px;
-  border: var(--thin-border);
-  border-radius: 8px;
-  background: rgba(15, 15, 31, 0.8);
-  color: var(--text-color);
-  font-size: 14px;
-  transition: all 0.3s ease;
-  min-width: 150px;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%230098CD' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 12px;
-}
-
-.random-filters select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-transparent);
-}
-
-.random-filters select:hover {
-  border-color: var(--accent);
-  background-color: rgba(0, 152, 205, 0.1);
-}
-
-.random-filters select option {
-  background: var(--main-bg);
-  color: var(--text-color);
-  padding: 8px 12px;
-}
-
-.random-filters select option:hover {
-  background: var(--accent-transparent);
-}
-
-/* Filter group styling */
-.filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  position: relative;
-}
-
-.filter-group label {
-  font-size: 14px;
-  color: var(--accent);
-  font-weight: 600;
-  text-align: center;
-}
-
-/* Responsive filters */
-@media (max-width: 768px) {
-  .random-filters {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .random-filters select {
-    min-width: auto;
-    width: 100%;
-  }
-  
-  .filter-group {
-    width: 100%;
-  }
-}
-
-/* Tab actions styling */
-.tab-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 20px;
-  padding: 0 16px;
-}
-
-#tab-games h2 {
-  color: var(--accent);
-  margin-bottom: 8px;
-  padding: 0 16px;
-}
-
-/* Hide batch actions by default, show when in batch mode */
-.batch-actions {
-  display: none;
-  gap: 8px;
-  align-items: center;
-  margin-left: auto;
-}
-
-/* Show when batch mode is active */
-body.batch-mode .batch-actions {
-  display: flex;
-}
-
-/* Add a more subtle batch toggle */
-#toggle-batch-mode {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-#toggle-batch-mode:hover {
-  background: var(--accent-transparent);
-  border-color: var(--accent);
-}
-
-/* Top 10 Selection Items */
-.top10-selection-item {
-    padding: 12px;
-    border: var(--thin-border);
-    border-radius: var(--card-radius);
-    margin-bottom: 8px;
-    background: var(--card-bg);
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-}
-
-.top10-selection-item:hover {
-    border-color: var(--accent);
-}
-
-.drag-handle {
-    color: var(--text-muted);
-    cursor: move;
-    padding: 4px;
-    user-select: none;
-}
-
-.why-i-love-it {
-  font-style: italic;
-  color: var(--text-color);
-  margin: 0;
-  line-height: 1.5;
-  border-left: 3px solid var(--accent);
-  padding-left: 12px;
-  background: rgba(0, 152, 205, 0.05);
-  padding: 12px;
-  border-radius: 4px;
-}
-
-.why-i-love-it:focus {
-    outline: none;
-    border-color: var(--accent);
-}
-
-/* Available game items with add button */
-.available-game-item {
-  padding: 12px;
-  border-bottom: var(--thin-border);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px; /* Reduced gap */
-}
-
-.available-game-item:hover {
-  background: var(--accent-transparent);
-}
-
-.available-game-item:last-child {
-  border-bottom: none;
-}
-
-.why-i-love-it-textarea {
-  width: 100%;
-  margin-top: 8px;
-  padding: 8px;
-  border: var(--thin-border);
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.3);
-  color: var(--text-color);
-  font-size: 12px;
-  resize: vertical;
-  min-height: 60px;
-  font-family: inherit;
-}
-
-.why-i-love-it-textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-/* Responsive design for Top 10 */
-@media (max-width: 768px) {
-  .top10-game-card {
-    flex-direction: column;
-    text-align: center;
-    gap: 12px;
-  }
-  
-  .top10-rank {
-    margin-right: 0;
-    margin-bottom: 8px;
-  }
-  
-  .top10-cover {
-    width: 100px;
-    height: 125px;
-  }
-  
-  .top10-meta {
-    justify-content: center;
-  }
-  
-  .top10-edit-container {
-    grid-template-columns: 1fr;
-    height: auto;
-    min-height: 600px;
-  }
-}
-
-/* Batch Operations Styling */
-.batch-actions {
-  display: none;
-  gap: 8px;
-  align-items: center;
-  margin-left: auto;
-  flex-wrap: wrap;
-}
-
-body.batch-mode .batch-actions {
-  display: flex;
-}
-
-/* Selected game styling */
-.game-card.selected {
-  border: 2px solid var(--accent);
-  background: var(--accent-transparent);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 152, 205, 0.3);
-}
-
-/* Batch toggle button styling */
-#toggle-batch-mode {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.3s ease;
-}
-
-#toggle-batch-mode:hover {
-  background: var(--accent-transparent);
-  border-color: var(--accent);
-  transform: translateY(-1px);
-}
-
-/* Checkbox styling */
-.select-checkbox {
-  cursor: pointer;
-}
-
-.select-checkbox:checked {
-  background: var(--accent);
-}
-
-/* Tab actions container */
-.tab-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 20px;
-  padding: 0 16px;
-  flex-wrap: wrap;
-}
-
-/* Danger button for delete */
-.btn.danger {
-  background: rgba(255, 71, 87, 0.2);
-  border-color: var(--error-color);
-  color: var(--error-color);
-}
-
-.btn.danger:hover {
-  background: rgba(255, 71, 87, 0.3);
-  transform: translateY(-1px);
-}
-
-/* Make sure batch actions are visible on mobile */
-@media (max-width: 768px) {
-  .batch-actions {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-    margin-left: 0;
-    margin-top: 12px;
-  }
-  
-  .batch-actions select,
-  .batch-actions button {
-    width: 100%;
-  }
-}
-
-/* Add this to your CSS */
 .batch-actions {
   display: none;
   gap: 8px;
@@ -2630,59 +1874,64 @@ body.batch-mode .batch-actions {
   display: flex !important;
 }
 
-.btn.danger {
-  background: rgba(255, 71, 87, 0.2);
-  border-color: var(--error-color);
-  color: var(--error-color);
+.game-card.selected {
+  border: 2px solid var(--accent);
+  background: var(--accent-transparent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 152, 205, 0.3);
 }
 
-.btn.danger:hover {
-  background: rgba(255, 71, 87, 0.3);
+.game-card .select-checkbox {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 20px;
+  height: 20px;
+  z-index: 2;
+}
+
+.select-checkbox {
+  cursor: pointer;
+}
+
+.select-checkbox:checked {
+  background: var(--accent);
+}
+
+/* Tab actions */
+.tab-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 0 16px;
+  flex-wrap: wrap;
+}
+
+#tab-games h2 {
+  color: var(--accent);
+  margin-bottom: 8px;
+  padding: 0 16px;
+}
+
+#toggle-batch-mode {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+#toggle-batch-mode:hover {
+  background: var(--accent-transparent);
+  border-color: var(--accent);
   transform: translateY(-1px);
 }
 
-/* Make sure batch actions are visible on mobile */
-@media (max-width: 768px) {
-  .batch-actions {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-    margin-left: 0;
-    margin-top: 12px;
-  }
-  
-  .batch-actions select,
-  .batch-actions button {
-    width: 100%;
-  }
-}
-
-/* Add tooltip styling */
-.batch-actions button[title] {
-  position: relative;
-}
-
-.batch-actions button[title]:hover::after {
-  content: attr(title);
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.8);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-size: 12px;
-  white-space: nowrap;
-  z-index: 1000;
-  margin-bottom: 8px;
-}
-
+/* Completion status */
 .completion-status {
   margin-top: 4px;
   font-size: 12px;
   padding: 4px 8px;
-  border-radius: 8px; /* More rounded corners */
+  border-radius: 8px;
   font-weight: 600;
   text-align: center;
   position: relative;
@@ -2697,7 +1946,7 @@ body.batch-mode .batch-actions {
   bottom: 0;
   border: 2px solid;
   border-image: linear-gradient(90deg, var(--success-color), rgba(46, 213, 115, 0.3), var(--success-color)) 1;
-  border-radius: 8px; /* Match the parent border radius */
+  border-radius: 8px;
   pointer-events: none;
 }
 
@@ -2715,7 +1964,7 @@ body.batch-mode .batch-actions {
   bottom: 0;
   border: 2px solid;
   border-image: linear-gradient(90deg, #ffd700, rgba(255, 215, 0, 0.3), #ffd700) 1;
-  border-radius: 8px; /* Match the parent border radius */
+  border-radius: 8px;
   pointer-events: none;
 }
 
@@ -2729,7 +1978,7 @@ body.batch-mode .batch-actions {
   color: var(--text-muted);
   margin-top: 4px;
   text-align: center;
-  border-radius: 6px; /* Slightly rounded for the percentage too */
+  border-radius: 6px;
 }
 
 .completion-text {
@@ -2762,4 +2011,202 @@ body.batch-mode .batch-actions {
 .status-badge.incomplete {
   background: rgba(255, 165, 2, 0.2);
   color: var(--warning-color);
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .sidebar {
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+  }
+
+  .brand {
+    margin-bottom: 0;
+    font-size: 18px;
+    padding-bottom: 0;
+  }
+
+  .brand::after {
+    display: none;
+  }
+
+  nav {
+    flex-direction: row;
+    flex: 1;
+    overflow-x: auto;
+    gap: 8px;
+  }
+
+  .nav-btn {
+    padding: 10px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+    text-align: center;
+    flex: 1;
+    min-width: max-content;
+  }
+
+  .nav-btn:hover,
+  .nav-btn.active {
+    transform: translateY(-2px);
+  }
+
+  .sidebar-footer {
+    display: none;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .fab {
+    bottom: 20px;
+    right: 20px;
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 768px) {
+  .achievement-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .achievement-actions {
+    justify-content: flex-start;
+  }
+  
+  .game-meta-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .completion-item {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+  
+  .completion-cover {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+  }
+  
+  .completion-meta {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .random-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .filter-group {
+    width: 100%;
+    max-width: 300px;
+  }
+  
+  .top10-edit-container {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  
+  .batch-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    margin-left: 0;
+    margin-top: 12px;
+  }
+  
+  .batch-actions select,
+  .batch-actions button {
+    width: 100%;
+  }
+
+  .top10-game-card {
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+  }
+  
+  .top10-rank {
+    margin-right: 0;
+    margin-bottom: 8px;
+  }
+  
+  .top10-cover {
+    width: 100px;
+    height: 125px;
+  }
+  
+  .top10-meta {
+    justify-content: center;
+  }
+  
+  .top10-edit-container {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 600px;
+  }
+
+  .comp-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .comp-actions {
+    order: -1;
+    align-self: flex-start;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent-transparent);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
 }

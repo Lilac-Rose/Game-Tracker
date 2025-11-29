@@ -387,6 +387,21 @@ document.getElementById('update-all-steam')?.addEventListener('click', async () 
   
   try {
     const res = await fetch('/api/steam/update-all-games', { method: 'POST' });
+    
+    // Check if response is OK before parsing JSON
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
+    
+    // Check content type to ensure it's JSON
+    const contentType = res.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      const text = await res.text();
+      console.error('Non-JSON response:', text);
+      throw new Error('Server returned non-JSON response. Check console for details.');
+    }
+    
     const result = await res.json();
     
     if (result.success) {
@@ -397,6 +412,7 @@ document.getElementById('update-all-steam')?.addEventListener('click', async () 
       alert('Failed to update games: ' + result.error);
     }
   } catch (err) {
+    console.error('Update error:', err);
     alert('Error updating games: ' + err.message);
   } finally {
     btn.textContent = originalText;
