@@ -1914,6 +1914,35 @@ body.batch-mode .batch-actions {
   padding: 0 16px;
 }
 
+#tab-stats .stats-section {
+    margin-top: 32px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#tab-stats .stats-section:last-of-type {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+#tab-stats .stats-section h3 {
+    color: var(--accent);
+    margin-bottom: 16px;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#tab-stats .stats-section h3:empty {
+    display: none;
+}
+
+#achievement-progress-list {
+    min-height: 50px;
+    margin-top: 20px;
+}
+
 #toggle-batch-mode {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2209,4 +2238,389 @@ body.batch-mode .batch-actions {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
+}
+
+/* Daily Hours Chart Styles */
+.hours-chart-container {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    border: var(--thin-border);
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+.hours-chart-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.7;
+}
+
+.hours-chart {
+    width: 100%;
+}
+
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.chart-header h4 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.chart-stats {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.chart-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 100px;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    opacity: 0.8;
+    margin-bottom: 2px;
+    font-weight: 500;
+}
+
+.chart-stat .stat-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    transition: all 0.3s ease;
+}
+
+.chart-stat:hover .stat-value {
+    transform: scale(1.05);
+}
+
+.stat-value.positive {
+    color: #2ed573;
+}
+
+.stat-value.negative {
+    color: #ff4757;
+}
+
+.chart-bars {
+    display: flex;
+    align-items: flex-end;
+    height: 200px;
+    gap: 8px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--accent-transparent);
+    margin-bottom: 12px;
+    position: relative;
+}
+
+.chart-bars::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+}
+
+.chart-bar-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+}
+
+.chart-bar-container:hover {
+    transform: translateY(-5px);
+}
+
+.chart-bar-container:hover .chart-bar {
+    opacity: 0.9;
+    box-shadow: 0 4px 12px rgba(0, 152, 205, 0.3);
+}
+
+.chart-bar-container:hover .bar-label {
+    color: var(--accent);
+    opacity: 1;
+    font-weight: 600;
+}
+
+.chart-bar {
+    width: 100%;
+    background: linear-gradient(to top, var(--accent), var(--accent-hover));
+    border-radius: 4px 4px 0 0;
+    min-height: 4px;
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 4px rgba(0, 152, 205, 0.2);
+}
+
+.chart-bar:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+}
+
+.chart-bar.today {
+    background: linear-gradient(to top, #2ed573, #7bed9f);
+    box-shadow: 0 4px 8px rgba(46, 213, 115, 0.3);
+}
+
+.chart-bar.today:hover {
+    box-shadow: 0 6px 12px rgba(46, 213, 115, 0.4);
+}
+
+.bar-value {
+    position: absolute;
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--card-bg);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    border: var(--thin-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.chart-bar-container:hover .bar-value {
+    opacity: 1;
+}
+
+.chart-bar.today .bar-value {
+    opacity: 1;
+    background: rgba(15, 15, 31, 0.95);
+    border-color: #2ed573;
+    color: #2ed573;
+}
+
+.bar-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 8px;
+    text-align: center;
+    opacity: 0.8;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.chart-footer {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    opacity: 0.7;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Responsive chart styles */
+@media (max-width: 768px) {
+    .hours-chart-container {
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    
+    .chart-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    
+    .chart-stats {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .chart-stat {
+        align-items: flex-start;
+        min-width: auto;
+        flex: 1;
+    }
+    
+    .chart-bars {
+        height: 150px;
+        padding: 15px 0;
+    }
+    
+    .bar-label {
+        font-size: 10px;
+        transform: rotate(-45deg);
+        margin-top: 15px;
+        text-align: left;
+        white-space: nowrap;
+        transform-origin: top left;
+        position: relative;
+        left: -5px;
+    }
+    
+    .chart-footer {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    .chart-bars {
+        height: 120px;
+        gap: 4px;
+    }
+    
+    .bar-label {
+        display: none;
+    }
+    
+    .chart-bar-container:hover .bar-label {
+        display: block;
+        position: absolute;
+        bottom: -30px;
+        left: 50%;
+        transform: translateX(-50%) rotate(0deg);
+        background: var(--card-bg);
+        padding: 4px 8px;
+        border-radius: 4px;
+        border: var(--thin-border);
+        z-index: 10;
+    }
+}
+
+.daily-breakdown {
+    background: var(--card-bg);
+    border: var(--thin-border);
+    border-radius: var(--card-radius);
+    padding: 20px;
+    animation: fadeIn 0.3s ease;
+}
+
+.breakdown-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: var(--thin-border);
+}
+
+.breakdown-header h4 {
+    margin: 0;
+    color: var(--accent);
+    font-size: 18px;
+}
+
+.breakdown-summary {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 0;
+}
+
+.breakdown-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.breakdown-game-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border: var(--thin-border);
+    border-radius: var(--card-radius);
+    transition: all 0.3s ease;
+    animation: slideInUp 0.4s ease;
+    animation-fill-mode: both;
+}
+
+.breakdown-game-item:hover {
+    transform: translateX(5px);
+    border-color: var(--accent);
+    background: rgba(0, 152, 205, 0.05);
+}
+
+.breakdown-game-cover {
+    width: 80px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+}
+
+.breakdown-game-item:hover .breakdown-game-cover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.breakdown-game-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.breakdown-game-title {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 6px;
+    transition: color 0.3s ease;
+}
+
+.breakdown-game-item:hover .breakdown-game-title {
+    color: var(--accent);
+}
+
+.breakdown-game-hours {
+    display: flex;
+    gap: 12px;
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+
+.hours-this-day {
+    color: var(--success-color);
+    font-weight: 600;
+    padding: 3px 8px;
+    background: rgba(46, 213, 115, 0.1);
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.breakdown-game-item:hover .hours-this-day {
+    background: rgba(46, 213, 115, 0.2);
+    transform: scale(1.05);
+}
+
+.total-hours {
+    color: var(--text-muted);
+    transition: color 0.3s ease;
+}
+
+.breakdown-game-item:hover .total-hours {
+    color: var(--text-color);
 }

@@ -1578,6 +1578,9 @@ async function loadStats() {
   document.getElementById('stat-hours').textContent = stats.total_hours + 'h';
   document.getElementById('stat-achievements').textContent = stats.achievements_unlocked + ' / ' + stats.achievements_total;
   
+  // Render daily hours chart
+  renderDailyHoursChart(stats.daily_hours_history);
+  
   // Remove achievement progress list section entirely
   const progressList = document.getElementById('achievement-progress-list');
   progressList.innerHTML = ''; // Clear it
@@ -1630,6 +1633,133 @@ async function loadStats() {
   }
 }
 
+function renderDailyHoursChart(dailyHours) {
+  const chartContainer = document.getElementById('daily-hours-chart');
+  
+  if (!dailyHours || dailyHours.length === 0) {
+    chartContainer.innerHTML = '<div class="empty-state">No daily hours data yet. Data will auto-update daily at 12 PM EST.</div>';
+    return;
+  }
+  
+  // Calculate stats
+  const firstDay = dailyHours[0].total_hours;
+  const lastDay = dailyHours[dailyHours.length - 1].total_hours;
+  const growth = lastDay - firstDay;
+  const dailyAvg = growth / (dailyHours.length - 1);
+  
+  // Find max for scaling
+  const maxHours = Math.max(...dailyHours.map(d => d.total_hours));
+  const minHours = Math.min(...dailyHours.map(d => d.total_hours));
+  const range = maxHours - minHours || 1;
+  
+  // Format date nicely
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  
+  // Create chart
+  chartContainer.innerHTML = `
+    <div class="chart-header">
+      <h4>Total Hours Growth (Last ${dailyHours.length} Days)</h4>
+      <div class="chart-stats">
+        <span class="chart-stat">
+          <span class="stat-label">Total Growth:</span>
+          <span class="stat-value ${growth > 0 ? 'positive' : 'negative'}">${growth > 0 ? '+' : ''}${growth.toFixed(1)}h</span>
+        </span>
+        <span class="chart-stat">
+          <span class="stat-label">Daily Avg:</span>
+          <span class="stat-value">${dailyAvg.toFixed(1)}h</span>
+        </span>
+      </div>
+    </div>
+    <div class="chart-bars">
+      ${dailyHours.map((day, index) => {
+        const height = range > 0 ? ((day.total_hours - minHours) / range) * 80 + 20 : 50;
+        const isToday = index === dailyHours.length - 1;
+        
+        return `
+          <div class="chart-bar-container" 
+               data-date="${day.date}"
+               title="${formatDate(day.date)}: ${day.total_hours.toFixed(1)}h total (${day.games_played} games) - Click for breakdown">
+            <div class="chart-bar ${isToday ? 'today' : ''}" style="height: ${height}%">
+              ${isToday ? `<span class="bar-value">${day.total_hours.toFixed(0)}h</span>` : ''}
+            </div>
+            <div class="bar-label">${formatDate(day.date)}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div class="chart-footer">
+      <small>Auto-updates daily at 12 PM EST • Last update: ${formatDate(dailyHours[dailyHours.length - 1].date)}</small>
+    </div>
+    <div id="daily-breakdown" class="daily-breakdown" style="display: none; margin-top: 20px;"></div>
+  `;
+  
+  // Add click handlers to bars
+  chartContainer.querySelectorAll('.chart-bar-container').forEach(container => {
+    container.addEventListener('click', async () => {
+      const date = container.dataset.date;
+      await showDailyBreakdown(date);
+    });
+  });
+}
+
+async function showDailyBreakdown(date) {
+  const breakdownDiv = document.getElementById('daily-breakdown');
+  breakdownDiv.style.display = 'block';
+  breakdownDiv.innerHTML = '<div class="loading">Loading game breakdown...</div>';
+  
+  try {
+    const res = await fetch(`/api/daily-game-hours/${date}`);
+    
+    if (!res.ok) {
+      breakdownDiv.innerHTML = '<div class="error">No detailed data available for this date. Data started being tracked after this feature was added.</div>';
+      return;
+    }
+    
+    const games = await res.json();
+    
+    if (games.length === 0) {
+      breakdownDiv.innerHTML = '<div class="empty-state">No games played on this day</div>';
+      return;
+    }
+    
+    const formatDate = (dateStr) => {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    };
+    
+    const totalHoursThisDay = games.reduce((sum, g) => sum + g.hours_this_day, 0);
+    
+    breakdownDiv.innerHTML = `
+      <div class="breakdown-header">
+        <h4>Games Played on ${formatDate(date)}</h4>
+        <p class="breakdown-summary">${games.length} game${games.length !== 1 ? 's' : ''} • ${totalHoursThisDay.toFixed(1)}h total</p>
+        <button class="btn small secondary" onclick="document.getElementById('daily-breakdown').style.display='none'">Close</button>
+      </div>
+      <div class="breakdown-list">
+        ${games.map((game, index) => `
+          <div class="breakdown-game-item" style="animation-delay: ${0.1 + index * 0.05}s">
+            ${game.cover_url ? `<img src="${game.cover_url}" class="breakdown-game-cover" alt="${game.game_title}" />` : ''}
+            <div class="breakdown-game-info">
+              <div class="breakdown-game-title">${game.game_title}</div>
+              <div class="breakdown-game-hours">
+                <span class="hours-this-day">+${game.hours_this_day.toFixed(1)}h this day</span>
+                <span class="total-hours">${game.total_hours.toFixed(1)}h total</span>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    
+  } catch (err) {
+    console.error('Error loading daily breakdown:', err);
+    breakdownDiv.innerHTML = '<div class="error">Error loading game breakdown</div>';
+  }
+}
+
 // Import/Export
 document.getElementById('export-json').addEventListener('click', async () => {
   const res = await fetch('/api/games');
@@ -1667,7 +1797,7 @@ document.getElementById('import-steam-library').addEventListener('click', async 
     return;
   }
   
-  const importAchievements = False;
+  const importAchievements = false;
   
   let confirmMessage = 'Import your Steam library? This will add all games from your Steam account.';
   if (importAchievements) {
@@ -1691,7 +1821,7 @@ document.getElementById('import-steam-library').addEventListener('click', async 
         'Accept': 'application/json'
       },
       body: JSON.stringify({ 
-        import_achievements: importAchievements 
+        import_achievements: false 
       })
     });
     
@@ -1978,6 +2108,36 @@ document.getElementById('cleanup-images')?.addEventListener('click', async () =>
     const resultDiv = document.getElementById('admin-tools-result');
     if (result.success) {
       resultDiv.innerHTML = `<div class="success">✓ ${result.message}</div>`;
+    } else {
+      resultDiv.innerHTML = `<div class="error">❌ ${result.error}</div>`;
+    }
+  } catch (err) {
+    document.getElementById('admin-tools-result').innerHTML = `<div class="error">Error: ${err.message}</div>`;
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('record-daily-now')?.addEventListener('click', async () => {
+  if (!confirm('This will update all Steam games and record today\'s hours. Continue?')) return;
+  
+  const btn = document.getElementById('record-daily-now');
+  const originalText = btn.textContent;
+  btn.textContent = 'Recording...';
+  btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/record-daily-hours-now', { method: 'POST' });
+    const result = await res.json();
+    
+    const resultDiv = document.getElementById('admin-tools-result');
+    if (result.success) {
+      resultDiv.innerHTML = `<div class="success">✓ ${result.message} - Refresh stats tab to see updated data</div>`;
+      // Refresh stats if we're on that tab
+      if (document.getElementById('tab-stats').classList.contains('active')) {
+        setTimeout(() => loadStats(), 1000);
+      }
     } else {
       resultDiv.innerHTML = `<div class="error">❌ ${result.error}</div>`;
     }
@@ -2495,12 +2655,19 @@ async function batchUpdateStatus() {
             console.log(`Game ${gameId} completed all achievements on ${result.completion_date}`);
           }
           
-          // If a specific status was selected, update it
-          if (newStatus) {
+          // If a specific status was selected AND the game wasn't auto-completed, update it
+          if (newStatus && !result.all_achievements_unlocked) {
+            // Get the full game data first
+            const gameRes = await fetch(`/api/games/${gameId}`);
+            const gameData = await gameRes.json();
+            
+            // Update with full data, only changing the status
+            gameData.status = newStatus;
+            
             await fetch(`/api/games/${gameId}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: newStatus })
+              body: JSON.stringify(gameData)
             });
           }
         }

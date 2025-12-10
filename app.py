@@ -4,12 +4,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import hashlib
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 import time
 from datetime import datetime
+import traceback
+import threading
+import schedule
 
 # Load environment variables
 load_dotenv()
@@ -104,6 +107,23 @@ def init_db():
         duration_minutes INTEGER,
         FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS daily_hours_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL UNIQUE,
+        total_hours REAL NOT NULL,
+        games_played INTEGER DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS daily_game_hours (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        game_id INTEGER NOT NULL,
+        game_title TEXT NOT NULL,
+        hours_played REAL NOT NULL,
+        cover_url TEXT,
+        FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE,
+        UNIQUE(date, game_id)
+    );
     ''')
     conn.commit()
     conn.close()
@@ -124,8 +144,6 @@ def login_required(f):
             return jsonify({'error': 'Authentication required'}), 401
         return f(*args, **kwargs)
     return decorated_function
-
-
 
 # Steam API helpers
 def search_steam_games(query):
@@ -321,6 +339,271 @@ def download_cover_image(url, game_id, steam_app_id):
         print(f"Error downloading cover for game {game_id} (Steam App {steam_app_id}): {e}")
     return None
 
+def get_total_hours_played():
+    """Get total hours played from all games"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT SUM(hours_played) as total_hours FROM games WHERE hours_played IS NOT NULL')
+    result = cur.fetchone()
+    conn.close()
+    return result['total_hours'] or 0
+
+def update_all_steam_hours_sync():
+    """Synchronously update all Steam game hours without achievements"""
+    if not STEAM_API_KEY or not STEAM_USER_ID:
+        print("Steam API not configured, skipping auto-update")
+        return False
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get all Steam games
+        cur.execute('SELECT id, steam_app_id FROM games WHERE steam_app_id IS NOT NULL')
+        steam_games = cur.fetchall()
+        
+        if not steam_games:
+            conn.close()
+            return True
+        
+        print(f"Auto-updating {len(steam_games)} Steam games...")
+        
+        # Get current Steam library data in ONE API CALL
+        games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={STEAM_USER_ID}&include_appinfo=1"
+        games_response = steam_api_call_with_rate_limit(games_url)
+        
+        if games_response.status_code != 200:
+            print(f"Steam API returned status {games_response.status_code}")
+            conn.close()
+            return False
+        
+        games_data = games_response.json()
+        steam_library = {game['appid']: game for game in games_data.get('response', {}).get('games', [])}
+        
+        updated_count = 0
+        for game in steam_games:
+            app_id = game['steam_app_id']
+            steam_game = steam_library.get(app_id)
+            
+            if steam_game:
+                playtime_minutes = steam_game.get('playtime_forever', 0)
+                hours_played = round(playtime_minutes / 60, 1) if playtime_minutes > 0 else 0
+                cur.execute('UPDATE games SET hours_played=? WHERE id=?', (hours_played, game['id']))
+                updated_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"Auto-updated {updated_count} Steam games")
+        return True
+    except Exception as e:
+        print(f"Error auto-updating Steam hours: {e}")
+        return False
+
+def record_daily_hours():
+    """Record today's total hours played (with auto-update from Steam first)"""
+    try:
+        # First, update all Steam game hours
+        print("Running daily Steam hours update...")
+        update_all_steam_hours_sync()
+        
+        today = date.today().isoformat()
+        total_hours = get_total_hours_played()
+        
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Count how many games have hours played
+        cur.execute('SELECT COUNT(*) as count FROM games WHERE hours_played IS NOT NULL AND hours_played > 0')
+        games_played = cur.fetchone()['count']
+        
+        # Insert or update today's record
+        cur.execute('''
+            INSERT OR REPLACE INTO daily_hours_history (date, total_hours, games_played)
+            VALUES (?, ?, ?)
+        ''', (today, total_hours, games_played))
+        
+        # Also save per-game snapshots for the day
+        cur.execute('''
+            SELECT id, title, hours_played, cover_url 
+            FROM games 
+            WHERE hours_played IS NOT NULL AND hours_played > 0
+            ORDER BY hours_played DESC
+        ''')
+        games = cur.fetchall()
+        
+        # Clear existing snapshots for today (in case of re-run)
+        cur.execute('DELETE FROM daily_game_hours WHERE date = ?', (today,))
+        
+        # Insert new snapshots
+        for game in games:
+            cur.execute('''
+                INSERT INTO daily_game_hours (date, game_id, game_title, hours_played, cover_url)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (today, game['id'], game['title'], game['hours_played'], game['cover_url']))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"Recorded daily hours: {today} - {total_hours}h across {games_played} games")
+        print(f"Saved {len(games)} game snapshots for {today}")
+        return True
+    except Exception as e:
+        print(f"Error recording daily hours: {e}")
+        traceback.print_exc()
+        return False
+
+def get_daily_hours_history(days=30):
+    """Get daily hours history for the last N days"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute('''
+            SELECT date, total_hours, games_played 
+            FROM daily_hours_history 
+            ORDER BY date DESC 
+            LIMIT ?
+        ''', (days,))
+        
+        history = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        
+        # Fill in missing days with last known value
+        if history:
+            filled_history = []
+            current_date = date.today()
+            
+            for i in range(days):
+                check_date = (current_date - timedelta(days=i)).isoformat()
+                day_data = next((h for h in history if h['date'] == check_date), None)
+                
+                if day_data:
+                    filled_history.append(day_data)
+                elif filled_history:
+                    # Use last known value for missing days
+                    last_data = filled_history[-1].copy()
+                    last_data['date'] = check_date
+                    filled_history.append(last_data)
+                else:
+                    # No data at all, create empty entry
+                    filled_history.append({
+                        'date': check_date,
+                        'total_hours': 0,
+                        'games_played': 0
+                    })
+            
+            # Sort chronologically for chart display
+            filled_history.sort(key=lambda x: x['date'])
+            return filled_history
+        
+        return []
+    except Exception as e:
+        print(f"Error getting daily hours history: {e}")
+        return []
+
+@app.route('/api/daily-game-hours/<date>')
+def api_daily_game_hours(date):
+    """Get per-game hours breakdown for a specific day"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get the snapshot for this date
+        cur.execute('''
+            SELECT game_id, game_title, hours_played, cover_url
+            FROM daily_game_hours
+            WHERE date = ?
+            ORDER BY hours_played DESC
+        ''', (date,))
+        
+        current_snapshot = [dict(r) for r in cur.fetchall()]
+        
+        if not current_snapshot:
+            conn.close()
+            return jsonify({'error': 'No data for this date'}), 404
+        
+        # Get the previous day's snapshot to calculate hours played ON this day
+        date_obj = datetime.strptime(date, '%Y-%m-%d')
+        prev_date = (date_obj - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        cur.execute('''
+            SELECT game_id, hours_played
+            FROM daily_game_hours
+            WHERE date = ?
+        ''', (prev_date,))
+        
+        prev_snapshot = {row['game_id']: row['hours_played'] for row in cur.fetchall()}
+        
+        # Calculate hours played on this specific day
+        result = []
+        for game in current_snapshot:
+            prev_hours = prev_snapshot.get(game['game_id'], 0)
+            hours_this_day = round(game['hours_played'] - prev_hours, 1)
+            
+            # Only include games where hours increased
+            if hours_this_day > 0:
+                result.append({
+                    'game_id': game['game_id'],
+                    'game_title': game['game_title'],
+                    'total_hours': game['hours_played'],
+                    'hours_this_day': hours_this_day,
+                    'cover_url': game['cover_url']
+                })
+        
+        # Sort by hours played on this day (descending)
+        result.sort(key=lambda x: x['hours_this_day'], reverse=True)
+        
+        conn.close()
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error fetching daily game hours: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/record-daily-hours-now', methods=['POST'])
+def api_record_daily_hours_now():
+    """Manually trigger daily hours recording (admin only)"""
+    if not session.get('logged_in'):
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    try:
+        success = record_daily_hours()
+        if success:
+            return jsonify({'success': True, 'message': 'Daily hours recorded successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to record daily hours'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def schedule_daily_tracking():
+    """Schedule daily hours tracking at 12 PM EST"""
+    try:
+        def job():
+            print(f"Scheduled daily tracking running at {datetime.now()}")
+            record_daily_hours()
+        
+        # Schedule at 12 PM EST (17:00 UTC)
+        schedule.every().day.at("17:00").do(job)
+        
+        def run_scheduler():
+            while True:
+                schedule.run_pending()
+                time.sleep(60)  # Check every minute
+        
+        # Run scheduler in background thread
+        scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+        scheduler_thread.start()
+        print("Daily hours tracking scheduler started (12 PM EST daily)")
+        
+        # Run once immediately to initialize today's data
+        record_daily_hours()
+    except Exception as e:
+        print(f"Failed to start daily tracking scheduler: {e}")
+        # Still try to record initial data
+        record_daily_hours()
+
 # Routes
 @app.route('/')
 def index():
@@ -380,18 +663,18 @@ def import_steam_library():
         return jsonify({'error': 'Steam API not configured. Please check your .env file.'}), 400
     
     # Robust JSON/Form data handling
-    import_achievements = True  # Default value
+    import_achievements = False  # Changed default to False to prevent timeout
     
     try:
         if request.is_json:
             data = request.get_json() or {}
-            import_achievements = data.get('import_achievements', True)
+            import_achievements = data.get('import_achievements', False)  # Default to False
         else:
             # Handle form data
-            import_achievements = request.form.get('import_achievements', 'true').lower() == 'true'
+            import_achievements = request.form.get('import_achievements', 'false').lower() == 'true'
     except Exception as e:
         print(f"Error parsing request data: {e}")
-        # Continue with default value
+        # Continue with default value (False)
     
     try:
         print("Starting Steam library import...")
@@ -446,8 +729,8 @@ def import_steam_library():
         # Sort by playtime (most played first)
         steam_games.sort(key=lambda x: x.get('playtime_forever', 0), reverse=True)
         
-        # Limit to avoid rate limiting
-        MAX_GAMES_TO_IMPORT = 50 if import_achievements else 1000
+        # Limit to avoid rate limiting and timeout
+        MAX_GAMES_TO_IMPORT = 20 if import_achievements else 1000  # Reduced from 50/1000
         if len(steam_games) > MAX_GAMES_TO_IMPORT:
             print(f"Limiting import to first {MAX_GAMES_TO_IMPORT} games (most played)")
             steam_games = steam_games[:MAX_GAMES_TO_IMPORT]
@@ -558,9 +841,9 @@ def import_steam_library():
             
             conn.commit()
             
-            # Rate limiting - only when importing achievements
+            # Reduced rate limiting to prevent timeout
             if import_achievements and i < len(steam_games) - 1:
-                time.sleep(2)
+                time.sleep(1)  # Reduced from 2 to 1 second
         
         conn.close()
         
@@ -1193,8 +1476,9 @@ def update_all_games_from_steam():
         return jsonify({'error': 'Authentication required'}), 401
     
     if not STEAM_API_KEY or not STEAM_USER_ID:
-        return jsonify({'error': 'Steam API not configured'}), 400
+        return jsonify({'error': 'Steam API not configured. Check your .env file.'}), 400
     
+    conn = None
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -1205,73 +1489,116 @@ def update_all_games_from_steam():
         
         if not steam_games:
             conn.close()
-            return jsonify({'error': 'No Steam games found'}), 400
+            return jsonify({'error': 'No Steam games found in your library.'}), 400
         
-        print(f"Updating {len(steam_games)} games from Steam (hours only)...")
+        print(f"Attempting to update {len(steam_games)} Steam games...")
         
-        # Get current Steam library data
+        # Get current Steam library data in ONE API CALL
         games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={STEAM_USER_ID}&include_appinfo=1"
-        games_response = steam_api_call_with_rate_limit(games_url)
         
-        if games_response.status_code != 200:
-            conn.close()
-            return jsonify({'error': f'Steam API returned status {games_response.status_code}'}), 500
-        
-        # Parse JSON response safely
         try:
-            games_data = games_response.json()
-        except ValueError as e:
-            conn.close()
-            return jsonify({'error': f'Invalid JSON from Steam API: {str(e)}'}), 500
-        
-        steam_library = {game['appid']: game for game in games_data.get('response', {}).get('games', [])}
+            games_response = steam_api_call_with_rate_limit(games_url)
+            
+            if games_response.status_code == 401:
+                conn.close()
+                return jsonify({'error': 'Steam API key invalid or expired. Please check your API key in .env'}), 401
+            elif games_response.status_code == 403:
+                conn.close()
+                return jsonify({'error': 'Access forbidden. Your Steam profile may be private.'}), 403
+            elif games_response.status_code != 200:
+                conn.close()
+                return jsonify({'error': f'Steam API returned status {games_response.status_code}'}), 500
+            
+            # Parse JSON response
+            try:
+                games_data = games_response.json()
+            except ValueError as e:
+                conn.close()
+                print(f"Invalid JSON from Steam API: {games_response.text[:200]}")
+                return jsonify({'error': f'Invalid response from Steam API. Check your API configuration.'}), 500
+            
+            # Check if response has expected structure
+            response_data = games_data.get('response', {})
+            if not response_data.get('games'):
+                conn.close()
+                if 'games' in response_data:  # It exists but is empty
+                    return jsonify({'error': 'No games found in your Steam library.'}), 400
+                else:
+                    return jsonify({'error': 'Unexpected response format from Steam API.'}), 500
+                
+            steam_library = {game['appid']: game for game in response_data.get('games', [])}
+            
+        except requests.exceptions.Timeout:
+            if conn:
+                conn.close()
+            return jsonify({'error': 'Steam API request timed out. Please try again later.'}), 408
+        except requests.exceptions.ConnectionError:
+            if conn:
+                conn.close()
+            return jsonify({'error': 'Cannot connect to Steam API. Check your internet connection.'}), 503
         
         updated_count = 0
         hours_updated = 0
+        errors = []
         
+        # Process all games without delays
         for i, game in enumerate(steam_games):
             app_id = game['steam_app_id']
             steam_game = steam_library.get(app_id)
             
             if not steam_game:
+                # Game might not be in current Steam library (could be removed or hidden)
                 continue
             
-            # Update hours played only
-            playtime_minutes = steam_game.get('playtime_forever', 0)
-            hours_played = round(playtime_minutes / 60, 1) if playtime_minutes > 0 else None
-            
-            if hours_played is not None:
+            try:
+                # Update hours played only - convert minutes to hours
+                playtime_minutes = steam_game.get('playtime_forever', 0)
+                hours_played = round(playtime_minutes / 60, 1) if playtime_minutes > 0 else 0
+                
+                # Update the game
                 cur.execute('UPDATE games SET hours_played=? WHERE id=?', (hours_played, game['id']))
                 hours_updated += 1
                 print(f"Updated {game['title']}: {hours_played}h")
+                
+                updated_count += 1
+                
+            except Exception as game_error:
+                errors.append(f"{game['title']}: {str(game_error)}")
+                print(f"Error updating {game['title']}: {game_error}")
             
-            updated_count += 1
-            
-            # Small delay to avoid rate limiting
-            if i < len(steam_games) - 1:
-                time.sleep(0.5)
+            # IMPORTANT: REMOVED time.sleep(0.5) - this was causing timeout!
+            # If you need rate limiting, use a much smaller delay (e.g., 0.01)
+            # or better yet, implement batch updates
         
         conn.commit()
-        conn.close()
         
-        return jsonify({
+        # Record today's total hours in daily history
+        try:
+            record_daily_hours()
+        except Exception as e:
+            print(f"Note: Could not record daily hours: {e}")
+        
+        response = {
             'success': True,
             'games_updated': updated_count,
             'hours_updated': hours_updated,
             'message': f'Updated hours for {hours_updated} games from Steam'
-        })
+        }
         
-    except requests.exceptions.Timeout:
-        print("Steam API request timed out")
-        return jsonify({'error': 'Steam API request timed out. Please try again later.'}), 408
-    except requests.exceptions.ConnectionError:
-        print("Cannot connect to Steam API")
-        return jsonify({'error': 'Cannot connect to Steam API. Check your internet connection.'}), 503
+        if errors:
+            response['errors'] = errors[:5]  # Limit to 5 errors to avoid huge response
+            response['error_count'] = len(errors)
+        
+        return jsonify(response)
+        
     except Exception as e:
-        import traceback
+        print(f"Unexpected error in update_all_games_from_steam: {str(e)}")
         traceback.print_exc()
-        return jsonify({'error': f'Update failed: {str(e)}'}), 500
-
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+    finally:
+        if conn:
+            conn.close()
+            
 @app.route('/api/random-game')
 def api_random_game():
     status_filter = request.args.get('status', 'all')
@@ -1599,6 +1926,9 @@ def api_all_completionist():
     conn.close()
     return jsonify(rows)
 
+schedule_daily_tracking()
+
 # Run locally for debugging
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
+
