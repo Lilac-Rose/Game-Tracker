@@ -289,6 +289,7 @@ nav {
   position: relative;
 }
 
+
 .tab { 
   display: none; 
 }
@@ -1646,67 +1647,126 @@ textarea:focus {
 /* Top 10 Tab */
 .top10-header {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 32px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid var(--accent-transparent);
 }
 
 .top10-header h2 {
   color: var(--accent);
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.top10-header p {
+  color: var(--text-muted);
+  font-size: 16px;
 }
 
 .top10-actions {
   display: flex;
   gap: 12px;
   justify-content: center;
-  margin-bottom: 24px;
+  margin-bottom: 32px;
   flex-wrap: wrap;
 }
 
 .top10-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  max-width: 800px;
+  gap: 24px;
+  max-width: 900px;
   margin: 0 auto;
 }
 
-.top10-item {
+/* Top 10 Game Card - NEW DESIGN */
+.top10-game-card {
   background: var(--card-bg);
   border: var(--thin-border);
   border-radius: var(--card-radius);
-  padding: 20px;
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 60px 180px 1fr;
+  gap: 20px;
+  align-items: center;
   transition: all 0.3s ease;
+  overflow: hidden;
+  position: relative;
 }
 
-.top10-item:hover {
-  transform: translateX(5px);
+.top10-game-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-hover));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.top10-game-card:hover {
+  transform: translateX(8px);
+  box-shadow: 0 8px 24px rgba(0, 152, 205, 0.2);
   border-color: var(--accent);
 }
 
-.top10-rank {
-  font-size: 24px;
-  font-weight: bold;
-  color: var(--accent);
-  min-width: 40px;
-  text-align: center;
-  flex-shrink: 0;
-  margin-right: 8px;
-  line-height: 1;
+.top10-game-card:hover::before {
+  opacity: 1;
 }
 
+/* Rank Badge */
+.top10-rank {
+  font-size: 32px;
+  font-weight: 900;
+  color: var(--accent);
+  text-align: center;
+  padding: 20px 0;
+  position: relative;
+  margin: 0;
+}
+
+.top10-rank::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--accent-transparent), transparent);
+}
+
+/* Cover Image */
+.top10-cover {
+  width: 180px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.top10-game-card:hover .top10-cover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Content Area */
 .top10-content {
   flex: 1;
+  padding: 20px 20px 20px 0;
   min-width: 0;
 }
 
 .top10-content h3 {
-  margin: 0 0 8px 0;
+  margin: 0 0 12px 0;
   color: var(--text-color);
-  font-size: 18px;
-  line-height: 1.2;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .top10-meta {
@@ -1714,68 +1774,68 @@ textarea:focus {
   gap: 12px;
   margin-bottom: 12px;
   font-size: 14px;
-  color: var(--text-muted);
   flex-wrap: wrap;
 }
 
 .top10-meta .platform,
 .top10-meta .hours,
 .top10-meta .rating {
-  background: rgba(255, 255, 255, 0.05);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.top10-game-card:hover .top10-meta .platform,
+.top10-game-card:hover .top10-meta .hours {
+  background: rgba(0, 152, 205, 0.15);
+  color: var(--accent);
 }
 
 .top10-meta .rating {
   color: #ffd700;
+  background: rgba(255, 215, 0, 0.1);
 }
 
-.top10-cover {
-  width: 120px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
+/* Why I Love It */
 .why-i-love-it {
   font-style: italic;
-  color: var(--text-color);
+  color: var(--text-muted);
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.6;
   border-left: 3px solid var(--accent);
-  padding-left: 12px;
-  background: rgba(0, 152, 205, 0.05);
-  padding: 12px;
-  border-radius: 4px;
+  padding-left: 16px;
+  font-size: 14px;
+  position: relative;
 }
 
-.why-i-love-it:focus {
-    outline: none;
-    border-color: var(--accent);
+.why-i-love-it::before {
+  content: '"';
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  font-size: 32px;
+  color: var(--accent);
+  opacity: 0.3;
+  font-family: Georgia, serif;
 }
 
-.why-i-love-it-textarea {
-  width: 100%;
-  margin-top: 8px;
-  padding: 8px;
+/* Top 10 Edit Modal Styles */
+.top10-edit-instructions {
+  background: rgba(0, 152, 205, 0.1);
   border: var(--thin-border);
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
   color: var(--text-color);
-  font-size: 12px;
-  resize: vertical;
-  min-height: 60px;
-  font-family: inherit;
+  font-size: 14px;
 }
 
-.why-i-love-it-textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-/* Top 10 Edit Modal */
 .top10-edit-container {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1788,6 +1848,7 @@ textarea:focus {
 .top10-selection-section {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .available-games-section h3,
@@ -1795,15 +1856,22 @@ textarea:focus {
   color: var(--accent);
   margin-bottom: 12px;
   font-size: 16px;
+  font-weight: 600;
 }
 
 .search-input {
-  padding: 10px;
+  padding: 10px 12px;
   border: var(--thin-border);
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.3);
   color: var(--text-color);
   margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .available-games-list,
@@ -1814,9 +1882,49 @@ textarea:focus {
   border-radius: var(--card-radius);
   background: rgba(0, 0, 0, 0.2);
   padding: 8px;
+  min-height: 0;
 }
 
-.available-game-item,
+/* Available Game Item */
+.available-game-item {
+  padding: 12px;
+  border: var(--thin-border);
+  border-radius: var(--card-radius);
+  margin-bottom: 8px;
+  background: var(--card-bg);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.available-game-item:hover {
+  background: var(--accent-transparent);
+  border-color: var(--accent);
+  transform: translateX(4px);
+}
+
+.available-game-item button {
+  margin-left: auto;
+  padding: 6px 12px;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.available-game-item button:hover {
+  background: var(--accent-hover);
+  transform: scale(1.05);
+}
+
+/* Top 10 Selection Item (with drag) */
 .top10-selection-item {
   padding: 12px;
   border: var(--thin-border);
@@ -1826,39 +1934,94 @@ textarea:focus {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  cursor: move;
+  transition: all 0.2s ease;
 }
 
-.available-game-item:hover,
 .top10-selection-item:hover {
   background: var(--accent-transparent);
   border-color: var(--accent);
+  transform: scale(1.02);
 }
 
-.top10-selection-item {
-  cursor: move;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.top10-selection-item[draggable="true"] {
+  cursor: grab;
 }
 
-.top10-selection-item .game-info {
-  flex: 1;
+.top10-selection-item[draggable="true"]:active {
+  cursor: grabbing;
+  opacity: 0.5;
 }
 
 .drag-handle {
   color: var(--text-muted);
-  cursor: move;
+  cursor: grab;
   padding: 4px;
   user-select: none;
   flex-shrink: 0;
-  margin-right: 4px;
+  font-size: 16px;
+  transition: color 0.2s ease;
+}
+
+.top10-selection-item:hover .drag-handle {
+  color: var(--accent);
+}
+
+.top10-selection-item .game-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .top10-selection-item .remove-game {
   color: var(--error-color);
   cursor: pointer;
-  padding: 4px;
+  padding: 4px 8px;
   flex-shrink: 0;
+  background: rgba(255, 71, 87, 0.1);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.top10-selection-item .remove-game:hover {
+  background: rgba(255, 71, 87, 0.2);
+  border-color: var(--error-color);
+  transform: scale(1.1);
+}
+
+/* Responsive Top 10 */
+@media (max-width: 768px) {
+  .top10-game-card {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 16px;
+  }
+  
+  .top10-rank {
+    text-align: left;
+    padding: 0;
+    font-size: 24px;
+  }
+  
+  .top10-rank::after {
+    display: none;
+  }
+  
+  .top10-cover {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+  }
+  
+  .top10-content {
+    padding: 0;
+  }
+  
+  .top10-edit-container {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 600px;
+  }
 }
 
 /* Batch Operations */
@@ -2240,387 +2403,320 @@ body.batch-mode .batch-actions {
   background: var(--accent);
 }
 
-/* Daily Hours Chart Styles */
-.hours-chart-container {
-    background: var(--card-bg);
-    border-radius: 12px;
-    padding: 20px;
-    border: var(--thin-border);
-    margin-bottom: 20px;
-    position: relative;
-    overflow: hidden;
+/* Line Chart Container */
+.line-chart-container {
+  position: relative;
+  overflow: visible !important;
+  width: 100%;
+  height: 200px;
+  margin: 20px 0;
+  background: rgba(0, 0, 0, 0.2);
+  border: var(--thin-border);
+  border-radius: 8px;
+  padding: 20px;
 }
 
-.hours-chart-container::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    opacity: 0.7;
+.line-chart-container > div:first-child {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.hours-chart {
-    width: 100%;
+.line-chart-container svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
 .chart-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    gap: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
 }
 
 .chart-header h4 {
-    margin: 0;
-    font-size: 16px;
-    color: var(--text-color);
-    font-weight: 600;
+  margin: 0;
+  color: var(--text-color);
+  font-size: 18px;
 }
 
 .chart-stats {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .chart-stat {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    min-width: 100px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+#chart-tooltip {
+  position: fixed;
+  z-index: 1000;
 }
 
 .stat-label {
-    font-size: 12px;
-    color: var(--text-muted);
-    opacity: 0.8;
-    margin-bottom: 2px;
-    font-weight: 500;
+  color: var(--text-muted);
+  font-weight: normal;
 }
 
-.chart-stat .stat-value {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--accent);
-    transition: all 0.3s ease;
-}
-
-.chart-stat:hover .stat-value {
-    transform: scale(1.05);
+.stat-value {
+  font-weight: bold;
+  font-size: 16px;
 }
 
 .stat-value.positive {
-    color: #2ed573;
+  color: var(--accent);
 }
 
 .stat-value.negative {
-    color: #ff4757;
+  color: #ff4757;
 }
 
-.chart-bars {
-    display: flex;
-    align-items: flex-end;
-    height: 200px;
-    gap: 8px;
-    padding: 20px 0;
-    border-bottom: 1px solid var(--accent-transparent);
-    margin-bottom: 12px;
-    position: relative;
+.stat-value.neutral {
+  color: var(--text-muted);
 }
 
-.chart-bars::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+/* Chart points */
+.chart-point {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: absolute;
+  z-index: 10;
 }
 
-.chart-bar-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    height: 100%;
-    cursor: pointer;
-    transition: transform 0.3s ease;
+.chart-point:hover {
+  transform: translate(-50%, -50%) scale(1.5) !important;
+  box-shadow: 0 0 12px var(--accent) !important;
+  z-index: 20 !important;
 }
 
-.chart-bar-container:hover {
-    transform: translateY(-5px);
+.chart-point.today {
+  background: var(--accent) !important;
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 2s ease-in-out infinite;
 }
 
-.chart-bar-container:hover .chart-bar {
-    opacity: 0.9;
-    box-shadow: 0 4px 12px rgba(0, 152, 205, 0.3);
+.chart-point.first {
+  background: rgba(255, 255, 255, 0.6) !important;
 }
 
-.chart-bar-container:hover .bar-label {
-    color: var(--accent);
-    opacity: 1;
-    font-weight: 600;
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px var(--accent);
+  }
+  50% {
+    box-shadow: 0 0 16px var(--accent), 0 0 24px var(--accent);
+  }
 }
 
-.chart-bar {
-    width: 100%;
-    background: linear-gradient(to top, var(--accent), var(--accent-hover));
-    border-radius: 4px 4px 0 0;
-    min-height: 4px;
-    position: relative;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 2px 4px rgba(0, 152, 205, 0.2);
+.point-label {
+  animation: fadeIn 0.3s ease-in;
+  pointer-events: none;
+  z-index: 30;
 }
 
-.chart-bar:hover {
-    opacity: 0.9;
-    transform: translateY(-2px);
-}
-
-.chart-bar.today {
-    background: linear-gradient(to top, #2ed573, #7bed9f);
-    box-shadow: 0 4px 8px rgba(46, 213, 115, 0.3);
-}
-
-.chart-bar.today:hover {
-    box-shadow: 0 6px 12px rgba(46, 213, 115, 0.4);
-}
-
-.bar-value {
-    position: absolute;
-    top: -28px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--card-bg);
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 700;
-    white-space: nowrap;
-    border: var(--thin-border);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    z-index: 10;
+@keyframes fadeIn {
+  from {
     opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.chart-bar-container:hover .bar-value {
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
     opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
-.chart-bar.today .bar-value {
-    opacity: 1;
-    background: rgba(15, 15, 31, 0.95);
-    border-color: #2ed573;
-    color: #2ed573;
-}
-
-.bar-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 8px;
-    text-align: center;
-    opacity: 0.8;
-    transition: all 0.3s ease;
-    font-weight: 500;
+/* X-axis labels */
+.chart-x-axis {
+  padding: 0 20px;
+  position: relative;
 }
 
 .chart-footer {
-    text-align: center;
-    font-size: 12px;
-    color: var(--text-muted);
-    opacity: 0.7;
-    padding-top: 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  opacity: 0.7;
 }
 
-/* Responsive chart styles */
-@media (max-width: 768px) {
-    .hours-chart-container {
-        padding: 15px;
-        margin-bottom: 15px;
-    }
-    
-    .chart-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 12px;
-    }
-    
-    .chart-stats {
-        width: 100%;
-        justify-content: space-between;
-    }
-    
-    .chart-stat {
-        align-items: flex-start;
-        min-width: auto;
-        flex: 1;
-    }
-    
-    .chart-bars {
-        height: 150px;
-        padding: 15px 0;
-    }
-    
-    .bar-label {
-        font-size: 10px;
-        transform: rotate(-45deg);
-        margin-top: 15px;
-        text-align: left;
-        white-space: nowrap;
-        transform-origin: top left;
-        position: relative;
-        left: -5px;
-    }
-    
-    .chart-footer {
-        font-size: 11px;
-    }
-}
-
-@media (max-width: 480px) {
-    .chart-bars {
-        height: 120px;
-        gap: 4px;
-    }
-    
-    .bar-label {
-        display: none;
-    }
-    
-    .chart-bar-container:hover .bar-label {
-        display: block;
-        position: absolute;
-        bottom: -30px;
-        left: 50%;
-        transform: translateX(-50%) rotate(0deg);
-        background: var(--card-bg);
-        padding: 4px 8px;
-        border-radius: 4px;
-        border: var(--thin-border);
-        z-index: 10;
-    }
-}
-
+/* Daily Breakdown */
 .daily-breakdown {
-    background: var(--card-bg);
-    border: var(--thin-border);
-    border-radius: var(--card-radius);
-    padding: 20px;
-    animation: fadeIn 0.3s ease;
+  background: rgba(0, 0, 0, 0.3);
+  border: var(--thin-border);
+  border-radius: 8px;
+  padding: 20px;
+  animation: slideDown 0.3s ease-out;
+  z-index: 1;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .breakdown-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-    gap: 12px;
-    padding-bottom: 12px;
-    border-bottom: var(--thin-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .breakdown-header h4 {
-    margin: 0;
-    color: var(--accent);
-    font-size: 18px;
+  margin: 0;
+  color: var(--accent);
+  font-size: 18px;
+  flex: 1;
 }
 
 .breakdown-summary {
-    color: var(--text-muted);
-    font-size: 14px;
-    margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  margin: 8px 0 0 0;
+  width: 100%;
 }
 
 .breakdown-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .breakdown-game-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px;
-    background: rgba(0, 0, 0, 0.2);
-    border: var(--thin-border);
-    border-radius: var(--card-radius);
-    transition: all 0.3s ease;
-    animation: slideInUp 0.4s ease;
-    animation-fill-mode: both;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border: var(--thin-border);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  animation: slideIn 0.3s ease-out backwards;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .breakdown-game-item:hover {
-    transform: translateX(5px);
-    border-color: var(--accent);
-    background: rgba(0, 152, 205, 0.05);
+  background: rgba(0, 0, 0, 0.4);
+  border-color: var(--accent);
+  transform: translateX(4px);
 }
 
 .breakdown-game-cover {
-    width: 80px;
-    height: 40px;
-    object-fit: cover;
-    border-radius: 6px;
-    flex-shrink: 0;
-    transition: all 0.3s ease;
-}
-
-.breakdown-game-item:hover .breakdown-game-cover {
-    transform: scale(1.05);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  width: 106px;
+  height: 60px;
+  object-fit: contain; 
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px;
 }
 
 .breakdown-game-info {
-    flex: 1;
-    min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .breakdown-game-title {
-    font-weight: 600;
-    font-size: 15px;
-    margin-bottom: 6px;
-    transition: color 0.3s ease;
-}
-
-.breakdown-game-item:hover .breakdown-game-title {
-    color: var(--accent);
+  font-weight: bold;
+  color: var(--text-color);
+  font-size: 16px;
 }
 
 .breakdown-game-hours {
-    display: flex;
-    gap: 12px;
-    font-size: 13px;
-    flex-wrap: wrap;
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
 }
 
 .hours-this-day {
-    color: var(--success-color);
-    font-weight: 600;
-    padding: 3px 8px;
-    background: rgba(46, 213, 115, 0.1);
-    border-radius: 4px;
-    transition: all 0.3s ease;
-}
-
-.breakdown-game-item:hover .hours-this-day {
-    background: rgba(46, 213, 115, 0.2);
-    transform: scale(1.05);
+  color: var(--accent);
+  font-weight: bold;
 }
 
 .total-hours {
-    color: var(--text-muted);
-    transition: color 0.3s ease;
+  color: var(--text-muted);
 }
 
-.breakdown-game-item:hover .total-hours {
-    color: var(--text-color);
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .chart-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .chart-stats {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .chart-stat {
+    font-size: 12px;
+  }
+  
+  .stat-value {
+    font-size: 14px;
+  }
+  
+  .breakdown-game-cover {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .breakdown-game-hours {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+/* Loading state */
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.error {
+  text-align: center;
+  padding: 20px;
+  color: #ff4757;
+  background: rgba(255, 71, 87, 0.1);
+  border: 1px solid rgba(255, 71, 87, 0.3);
+  border-radius: 6px;
 }

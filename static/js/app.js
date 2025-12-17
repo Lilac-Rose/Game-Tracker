@@ -889,19 +889,7 @@ document.getElementById('steam-search-btn').addEventListener('click', async () =
   }
 });
 
-async function importSteamAchievements(appId) {
-  try {
-    const res = await fetch(`/api/steam/achievements/${appId}`);
-    const achievements = await res.json();
-    
-    alert(`Found ${achievements.length} achievements. Save the game first, then you can import them.`);
-  } catch (err) {
-    alert('Failed to load achievements from Steam');
-  }
-}
-
 // Achievements
-// Achievements - show in a modal instead of switching tabs
 async function openAchievements(game) {
   const modalHtml = `
     <div class="modal show" id="achievements-modal">
@@ -1018,116 +1006,6 @@ async function openAchievements(game) {
 
 function closeAchievementsModal() {
   document.getElementById('achievements-modal')?.remove();
-}
-
-async function loadAchievementsModal(gameId) {
-  const res = await fetch(`/api/games/${gameId}/achievements`);
-  const achievements = await res.json();
-  const list = document.getElementById('ach-modal-list');
-  
-  if (achievements.length === 0) {
-    list.innerHTML = '<div class="empty-state">No achievements yet</div>';
-    document.getElementById('ach-progress-text').textContent = '0 / 0 (0%)';
-    document.getElementById('ach-progress-fill').style.width = '0%';
-    return;
-  }
-  
-  // Calculate progress
-  const unlocked = achievements.filter(a => a.unlocked).length;
-  const total = achievements.length;
-  const percentage = Math.round((unlocked / total) * 100);
-  
-  // Update progress bar with animation
-  const progressFill = document.getElementById('ach-progress-fill');
-  const progressText = document.getElementById('ach-progress-text');
-  
-  // Reset to 0 then animate to target percentage
-  progressFill.style.width = '0%';
-  progressText.textContent = '0 / 0 (0%)';
-  
-  // Use setTimeout to ensure the reset is rendered before animation
-  setTimeout(() => {
-    progressFill.style.width = percentage + '%';
-    progressText.textContent = `${unlocked} / ${total} (${percentage}%)`;
-  }, 50);
-  
-  const actionsHtml = isLoggedIn ? `
-    <div class="ach-actions">
-      <button class="btn-icon toggle-ach" data-id="ACH_ID" data-game="GAME_ID" data-unlocked="UNLOCKED">
-        TOGGLE_ICON
-      </button>
-      <button class="btn-icon delete-ach" data-id="ACH_ID" data-game="GAME_ID">🗑️</button>
-    </div>
-  ` : '';
-  
-  list.innerHTML = achievements.map((ach, index) => {
-    const actions = actionsHtml
-      .replace(/ACH_ID/g, ach.id)
-      .replace(/GAME_ID/g, gameId)
-      .replace('UNLOCKED', ach.unlocked)
-      .replace('TOGGLE_ICON', ach.unlocked ? '✓' : '○');
-    
-    // Add staggered animation delay based on index
-    const animationDelay = 0.1 + (index * 0.05);
-    
-    return `
-      <div class="achievement-card ${ach.unlocked ? 'unlocked' : 'locked'}" 
-           style="animation-delay: ${animationDelay}s">
-        ${ach.icon_url ? `<img src="${ach.icon_url}" class="ach-icon" />` : ''}
-        <div class="ach-content">
-          <div class="ach-title">${ach.title}</div>
-          <div class="ach-desc">${ach.description || ''}</div>
-          ${ach.date ? `<div class="ach-date">📅 ${ach.date}</div>` : ''}
-        </div>
-        ${actions}
-      </div>
-    `;
-  }).join('');
-  
-  if (isLoggedIn) {
-    // Toggle achievement
-    list.querySelectorAll('.toggle-ach').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const achId = btn.dataset.id;
-        const gameId = btn.dataset.game;
-        const unlocked = btn.dataset.unlocked === '1' ? 0 : 1;
-        
-        // Add loading state
-        btn.disabled = true;
-        btn.innerHTML = '⏳';
-        
-        await fetch(`/api/games/${gameId}/achievements/${achId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ unlocked })
-        });
-        
-        // Reload achievements with animation
-        await loadAchievementsModal(gameId);
-      });
-    });
-    
-    // Delete achievement
-    list.querySelectorAll('.delete-ach').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this achievement?')) return;
-        
-        const achId = btn.dataset.id;
-        const gameId = btn.dataset.game;
-        
-        // Add loading state
-        btn.disabled = true;
-        btn.innerHTML = '⏳';
-        
-        await fetch(`/api/games/${gameId}/achievements/${achId}`, {
-          method: 'DELETE'
-        });
-        
-        // Reload achievements with animation
-        await loadAchievementsModal(gameId);
-      });
-    });
-  }
 }
 
 async function loadAchievementsModal(gameId) {
@@ -1370,82 +1248,6 @@ async function loadCompletionistModal(gameId, sortBy = 'date') {
   }
 }
 
-async function loadCompletionistModal(gameId, sortBy = 'date') {
-  const res = await fetch(`/api/games/${gameId}/completionist?sort=${sortBy}`);
-  const achievements = await res.json();
-  const list = document.getElementById('comp-modal-list');
-  
-  if (achievements.length === 0) {
-    list.innerHTML = '<div class="empty-state">No completionist challenges yet</div>';
-    return;
-  }
-  
-  list.innerHTML = achievements.map(comp => {
-    const difficultyColor = comp.difficulty >= 80 ? '#ff4757' : 
-                           comp.difficulty >= 50 ? '#ffa502' : 
-                           '#2ed573';
-    
-    const editDeleteHtml = isLoggedIn ? `
-      <div class="comp-actions">
-        <button class="btn-icon edit-comp" data-id="${comp.id}" title="Edit">✏️</button>
-        <button class="btn-icon delete-comp" data-id="${comp.id}" title="Delete">🗑️</button>
-      </div>
-    ` : '';
-    
-    return `
-      <div class="completionist-card">
-        <div class="comp-header">
-          <div class="comp-title-section">
-            <div class="comp-title">${comp.title}</div>
-            ${comp.difficulty ? `
-              <div class="comp-difficulty" style="color: ${difficultyColor}">
-                Difficulty: ${comp.difficulty}/100
-              </div>
-            ` : ''}
-          </div>
-          ${editDeleteHtml}
-        </div>
-        
-        ${comp.description ? `<div class="comp-desc">${comp.description}</div>` : ''}
-        
-        <div class="comp-meta">
-          ${comp.time_to_complete ? `<span>⏱️ ${comp.time_to_complete}</span>` : ''}
-          ${comp.completion_date ? `<span>📅 ${comp.completion_date}</span>` : ''}
-          ${!comp.completion_date ? '<span>In Progress</span>' : ''}
-        </div>
-        
-        ${comp.notes ? `<div class="comp-notes">${comp.notes}</div>` : ''}
-      </div>
-    `;
-  }).join('');
-  
-  if (isLoggedIn) {
-    // Edit handlers
-    list.querySelectorAll('.edit-comp').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = parseInt(btn.dataset.id);
-        const comp = achievements.find(c => c.id === id);
-        showCompletionistModal(gameId, comp);
-      });
-    });
-    
-    // Delete handlers
-    list.querySelectorAll('.delete-comp').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this challenge?')) return;
-        
-        const id = parseInt(btn.dataset.id);
-        await fetch(`/api/games/${gameId}/completionist/${id}`, {
-          method: 'DELETE'
-        });
-        
-        const sortBy = document.getElementById('comp-sort')?.value || 'date';
-        loadCompletionistModal(gameId, sortBy);
-      });
-    });
-  }
-}
-
 function closeCompModal() {
   document.getElementById('comp-modal')?.remove();
   currentCompGame = null;
@@ -1455,116 +1257,6 @@ function closeCompModal() {
   if (currentCompGame && document.getElementById('completionist-modal')) {
     const sortBy = document.getElementById('comp-sort')?.value || 'date';
     loadCompletionistModal(currentCompGame, sortBy);
-  }
-}
-
-async function loadAchievements(gameId) {
-  const res = await fetch(`/api/games/${gameId}/achievements`);
-  const achievements = await res.json();
-  const list = document.getElementById('ach-list');
-  
-  if (achievements.length === 0) {
-    list.innerHTML = '<div class="empty-state">No achievements yet</div>';
-    document.getElementById('ach-progress-text').textContent = '0 / 0 (0%)';
-    document.getElementById('ach-progress-fill').style.width = '0%';
-    return;
-  }
-  
-  // Calculate progress
-  const unlocked = achievements.filter(a => a.unlocked).length;
-  const total = achievements.length;
-  const percentage = Math.round((unlocked / total) * 100);
-  
-  // Update progress bar with animation
-  const progressFill = document.getElementById('ach-progress-fill');
-  const progressText = document.getElementById('ach-progress-text');
-  
-  // Reset to 0 then animate to target percentage
-  progressFill.style.width = '0%';
-  progressText.textContent = '0 / 0 (0%)';
-  
-  // Use setTimeout to ensure the reset is rendered before animation
-  setTimeout(() => {
-    progressFill.style.width = percentage + '%';
-    progressText.textContent = `${unlocked} / ${total} (${percentage}%)`;
-  }, 50);
-  
-  const actionsHtml = isLoggedIn ? `
-    <div class="ach-actions">
-      <button class="btn-icon toggle-ach" data-id="ACH_ID" data-game="GAME_ID" data-unlocked="UNLOCKED">
-        TOGGLE_ICON
-      </button>
-      <button class="btn-icon delete-ach" data-id="ACH_ID" data-game="GAME_ID">🗑️</button>
-    </div>
-  ` : '';
-  
-  list.innerHTML = achievements.map((ach, index) => {
-    const actions = actionsHtml
-      .replace(/ACH_ID/g, ach.id)
-      .replace(/GAME_ID/g, gameId)
-      .replace('UNLOCKED', ach.unlocked)
-      .replace('TOGGLE_ICON', ach.unlocked ? '✓' : '○');
-    
-    // Add staggered animation delay based on index
-    const animationDelay = 0.1 + (index * 0.05);
-    
-    return `
-      <div class="achievement-card ${ach.unlocked ? 'unlocked' : 'locked'}" 
-           style="animation-delay: ${animationDelay}s">
-        ${ach.icon_url ? `<img src="${ach.icon_url}" class="ach-icon" />` : ''}
-        <div class="ach-content">
-          <div class="ach-title">${ach.title}</div>
-          <div class="ach-desc">${ach.description || ''}</div>
-          ${ach.date ? `<div class="ach-date">📅 ${ach.date}</div>` : ''}
-        </div>
-        ${actions}
-      </div>
-    `;
-  }).join('');
-  
-  if (isLoggedIn) {
-    // Toggle achievement
-    list.querySelectorAll('.toggle-ach').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const achId = btn.dataset.id;
-        const gameId = btn.dataset.game;
-        const unlocked = btn.dataset.unlocked === '1' ? 0 : 1;
-        
-        // Add loading state
-        btn.disabled = true;
-        btn.innerHTML = '⏳';
-        
-        await fetch(`/api/games/${gameId}/achievements/${achId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ unlocked })
-        });
-        
-        // Reload achievements with animation
-        await loadAchievements(gameId);
-      });
-    });
-    
-    // Delete achievement
-    list.querySelectorAll('.delete-ach').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this achievement?')) return;
-        
-        const achId = btn.dataset.id;
-        const gameId = btn.dataset.game;
-        
-        // Add loading state
-        btn.disabled = true;
-        btn.innerHTML = '⏳';
-        
-        await fetch(`/api/games/${gameId}/achievements/${achId}`, {
-          method: 'DELETE'
-        });
-        
-        // Reload achievements with animation
-        await loadAchievements(gameId);
-      });
-    });
   }
 }
 
@@ -1637,20 +1329,25 @@ function renderDailyHoursChart(dailyHours) {
   const chartContainer = document.getElementById('daily-hours-chart');
   
   if (!dailyHours || dailyHours.length === 0) {
-    chartContainer.innerHTML = '<div class="empty-state">No daily hours data yet. Data will auto-update daily at 12 PM EST.</div>';
+    chartContainer.innerHTML = '<div class="empty-state">No daily hours data yet. Data will be recorded daily at 12 PM EST.</div>';
     return;
   }
   
-  // Calculate stats
-  const firstDay = dailyHours[0].total_hours;
-  const lastDay = dailyHours[dailyHours.length - 1].total_hours;
-  const growth = lastDay - firstDay;
-  const dailyAvg = growth / (dailyHours.length - 1);
+  // Calculate stats for display
+  const firstDay = dailyHours[0];
+  const lastDay = dailyHours[dailyHours.length - 1];
+  const totalDays = dailyHours.length;
   
-  // Find max for scaling
-  const maxHours = Math.max(...dailyHours.map(d => d.total_hours));
-  const minHours = Math.min(...dailyHours.map(d => d.total_hours));
+  // Calculate actual growth from first recorded day to today
+  const growth = lastDay.total_hours - firstDay.total_hours;
+  const dailyAvg = totalDays > 1 ? growth / (totalDays - 1) : 0;
+  
+  // Find max and min for scaling
+  const allHours = dailyHours.map(d => d.total_hours);
+  const maxHours = Math.max(...allHours);
+  const minHours = Math.min(...allHours);
   const range = maxHours - minHours || 1;
+  const padding = range * 0.1; // 10% padding
   
   // Format date nicely
   const formatDate = (dateStr) => {
@@ -1658,55 +1355,264 @@ function renderDailyHoursChart(dailyHours) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
   
-  // Create chart
+  // Format date with year for tooltip
+  const formatDateLong = (dateStr) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  };
+  
+  // Create SVG line chart
+  const width = 100; // percentage
+  const height = 200; // pixels
+  const chartWidth = chartContainer.offsetWidth || 800;
+  const pointSpacing = chartWidth / Math.max(totalDays - 1, 1);
+  
+  // Generate SVG path for the line
+  const points = dailyHours.map((day, index) => {
+    const x = (index / Math.max(totalDays - 1, 1)) * 100;
+    const normalizedValue = (day.total_hours - (minHours - padding)) / (range + padding * 2);
+    const y = 100 - (normalizedValue * 90); // Use 90% of height, leave 10% margin
+    return { x, y, date: day.date, hours: day.total_hours, games: day.games_played };
+  });
+  
+  const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x},${p.y}`).join(' ');
+  
+  // Create gradient fill under the line
+  const gradientPath = `M 0,100 L ${points[0].x},${points[0].y} ${pathData.substring(1)} L 100,100 Z`;
+  
   chartContainer.innerHTML = `
     <div class="chart-header">
-      <h4>Total Hours Growth (Last ${dailyHours.length} Days)</h4>
+      <h4>Total Hours Tracked (${totalDays} day${totalDays !== 1 ? 's' : ''})</h4>
       <div class="chart-stats">
         <span class="chart-stat">
-          <span class="stat-label">Total Growth:</span>
-          <span class="stat-value ${growth > 0 ? 'positive' : 'negative'}">${growth > 0 ? '+' : ''}${growth.toFixed(1)}h</span>
+          <span class="stat-label">Growth:</span>
+          <span class="stat-value ${growth > 0 ? 'positive' : 'neutral'}">${growth > 0 ? '+' : ''}${growth.toFixed(1)}h</span>
         </span>
         <span class="chart-stat">
           <span class="stat-label">Daily Avg:</span>
-          <span class="stat-value">${dailyAvg.toFixed(1)}h</span>
+          <span class="stat-value">${dailyAvg.toFixed(1)}h/day</span>
+        </span>
+        <span class="chart-stat">
+          <span class="stat-label">Current:</span>
+          <span class="stat-value">${lastDay.total_hours.toFixed(1)}h</span>
         </span>
       </div>
     </div>
-    <div class="chart-bars">
-      ${dailyHours.map((day, index) => {
-        const height = range > 0 ? ((day.total_hours - minHours) / range) * 80 + 20 : 50;
-        const isToday = index === dailyHours.length - 1;
+    
+    <div class="line-chart-container" style="position: relative; width: 100%; height: ${height}px; margin: 20px 0;">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;">
+        <!-- Gradient fill under line -->
+        <defs>
+          <linearGradient id="lineGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:var(--accent);stop-opacity:0.3" />
+            <stop offset="100%" style="stop-color:var(--accent);stop-opacity:0" />
+          </linearGradient>
+        </defs>
+        <path d="${gradientPath}" fill="url(#lineGradient)" />
         
-        return `
-          <div class="chart-bar-container" 
-               data-date="${day.date}"
-               title="${formatDate(day.date)}: ${day.total_hours.toFixed(1)}h total (${day.games_played} games) - Click for breakdown">
-            <div class="chart-bar ${isToday ? 'today' : ''}" style="height: ${height}%">
-              ${isToday ? `<span class="bar-value">${day.total_hours.toFixed(0)}h</span>` : ''}
+        <!-- The main line -->
+        <path d="${pathData}" 
+              fill="none" 
+              stroke="var(--accent)" 
+              stroke-width="0.5" 
+              vector-effect="non-scaling-stroke"
+              style="filter: drop-shadow(0 0 2px var(--accent));" />
+      </svg>
+      
+      <!-- Data points overlay -->
+      <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+        ${points.map((point, index) => {
+          const isToday = index === points.length - 1;
+          const isFirst = index === 0;
+          const isNearEnd = point.x > 85; // Points in the last 15% of the chart
+          
+          return `
+            <div class="chart-point" 
+                 data-date="${point.date}"
+                 data-index="${index}"
+                 data-hours="${point.hours.toFixed(1)}"
+                 style="
+                   position: absolute;
+                   left: ${point.x}%;
+                   top: ${point.y}%;
+                   transform: translate(-50%, -50%);
+                   width: 8px;
+                   height: 8px;
+                   background: var(--accent);
+                   border: 2px solid var(--bg-dark);
+                   border-radius: 50%;
+                   cursor: pointer;
+                   z-index: 10;
+                   transition: all 0.2s ease;
+                 "
+                 title="${formatDateLong(point.date)}: ${point.hours.toFixed(1)}h total">
             </div>
-            <div class="bar-label">${formatDate(day.date)}</div>
-          </div>
-        `;
-      }).join('')}
+          `;
+        }).join('')}
+      </div>
     </div>
+    
+    <!-- X-axis labels -->
+    <div class="chart-x-axis">
+      <span>${formatDate(firstDay.date)}</span>
+      <span style="position: absolute; left: 50%; transform: translateX(-50%);">${totalDays} days</span>
+      <span>${formatDate(lastDay.date)}</span>
+    </div>
+    
     <div class="chart-footer">
-      <small>Auto-updates daily at 12 PM EST • Last update: ${formatDate(dailyHours[dailyHours.length - 1].date)}</small>
+      <small>Tracking started ${formatDate(firstDay.date)} • Auto-updates daily at 12 PM EST • Click points for game breakdown</small>
     </div>
-    <div id="daily-breakdown" class="daily-breakdown" style="display: none; margin-top: 20px;"></div>
   `;
   
-  // Add click handlers to bars
-  chartContainer.querySelectorAll('.chart-bar-container').forEach(container => {
-    container.addEventListener('click', async () => {
-      const date = container.dataset.date;
-      await showDailyBreakdown(date);
+  // Now that the chart is rendered, we can set up the tooltip
+  setupChartTooltips(chartContainer, points, formatDateLong);
+}
+
+function setupChartTooltips(chartContainer, points, formatDateLong) {
+  // Create tooltip if it doesn't exist
+  let chartTooltip = document.getElementById('chart-tooltip');
+  if (!chartTooltip) {
+    chartTooltip = document.createElement('div');
+    chartTooltip.id = 'chart-tooltip';
+    chartTooltip.style.cssText = `
+      position: fixed;
+      display: none;
+      padding: 8px 12px;
+      background: var(--modal-bg);
+      border: var(--thin-border);
+      border-radius: var(--card-radius);
+      font-size: 12px;
+      color: var(--text-color);
+      z-index: 1000;
+      pointer-events: none;
+      box-shadow: var(--shadow);
+      max-width: 200px;
+      text-align: center;
+      transition: opacity 0.2s ease;
+    `;
+    document.body.appendChild(chartTooltip);
+  }
+  
+  // Get the line chart container for mouse tracking
+  const lineChartContainer = chartContainer.querySelector('.line-chart-container');
+  
+  // Function to setup point events (called after chart is rendered)
+  const setupPointEvents = () => {
+    // Use event delegation on the chart container to handle dynamically added points
+    if (lineChartContainer) {
+      // Remove existing listeners first
+      lineChartContainer.removeEventListener('click', handlePointClick);
+      lineChartContainer.addEventListener('click', handlePointClick);
+      
+      // Also handle mouse events for tooltips
+      lineChartContainer.removeEventListener('mouseenter', handleMouseEnter);
+      lineChartContainer.removeEventListener('mousemove', handleMouseMove);
+      lineChartContainer.removeEventListener('mouseleave', handleMouseLeave);
+      
+      lineChartContainer.addEventListener('mouseenter', handleMouseEnter);
+      lineChartContainer.addEventListener('mousemove', handleMouseMove);
+      lineChartContainer.addEventListener('mouseleave', handleMouseLeave);
+    }
+  };
+  
+  // Event handlers
+  const handlePointClick = async (e) => {
+    const point = e.target.closest('.chart-point');
+    if (point && point.dataset.date) {
+      e.stopPropagation();
+      await showDailyBreakdown(point.dataset.date);
+    }
+  };
+  
+  const handleMouseEnter = (e) => {
+    const point = e.target.closest('.chart-point');
+    if (point) {
+      const date = point.dataset.date;
+      const hours = point.dataset.hours;
+      
+      // Get point position relative to viewport
+      const pointRect = point.getBoundingClientRect();
+      
+      // Calculate tooltip position
+      const tooltipX = pointRect.left + (pointRect.width / 2);
+      const tooltipY = pointRect.top - 10;
+      
+      // Set tooltip content and position
+      chartTooltip.textContent = `${formatDateLong(date)}: ${parseFloat(hours).toFixed(1)}h`;
+      chartTooltip.style.left = `${tooltipX}px`;
+      chartTooltip.style.top = `${tooltipY}px`;
+      chartTooltip.style.transform = 'translate(-50%, -100%)';
+      chartTooltip.style.display = 'block';
+      
+      // Adjust if tooltip would go off screen
+      const tooltipRect = chartTooltip.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      
+      if (tooltipRect.left < 10) {
+        chartTooltip.style.left = `${Math.max(10, tooltipRect.left)}px`;
+        chartTooltip.style.transform = 'translate(0, -100%)';
+      } else if (tooltipRect.right > viewportWidth - 10) {
+        chartTooltip.style.left = `${Math.min(viewportWidth - tooltipRect.width - 10, tooltipRect.left)}px`;
+        chartTooltip.style.transform = 'translate(0, -100%)';
+      }
+      
+      point.style.transform = 'translate(-50%, -50%) scale(1.5)';
+      point.style.boxShadow = '0 0 12px var(--accent)';
+      point.style.zIndex = '20';
+    }
+  };
+  
+  const handleMouseMove = (e) => {
+    if (chartTooltip.style.display === 'block') {
+      chartTooltip.style.left = `${e.clientX}px`;
+      chartTooltip.style.top = `${e.clientY - 20}px`;
+      chartTooltip.style.transform = 'translate(-50%, -100%)';
+    }
+  };
+  
+  const handleMouseLeave = () => {
+    chartTooltip.style.display = 'none';
+    const points = chartContainer.querySelectorAll('.chart-point');
+    points.forEach(point => {
+      point.style.transform = 'translate(-50%, -50%) scale(1)';
+      point.style.boxShadow = 'none';
+      point.style.zIndex = '10';
     });
-  });
+  };
+  
+  // Wait a bit for the chart to fully render, then setup events
+  setTimeout(() => {
+    setupPointEvents();
+  }, 100);
 }
 
 async function showDailyBreakdown(date) {
-  const breakdownDiv = document.getElementById('daily-breakdown');
+  // First, ensure we're in the stats tab
+  const statsTab = document.getElementById('tab-stats');
+  if (!statsTab.classList.contains('active')) {
+    // Switch to stats tab if we're not there
+    document.querySelector('[data-tab="stats"]').click();
+    await new Promise(resolve => setTimeout(resolve, 100)); // Wait for tab switch
+  }
+  
+  let breakdownDiv = document.getElementById('daily-breakdown');
+
+  // Create the breakdown div if it doesn't exist
+  if (!breakdownDiv) {
+    breakdownDiv = document.createElement('div');
+    breakdownDiv.id = 'daily-breakdown';
+    breakdownDiv.className = 'daily-breakdown';
+    const chartContainer = document.getElementById('daily-hours-chart');
+    
+    if (!chartContainer) {
+      console.error('Chart container not found');
+      return;
+    }
+    
+    // Insert after the chart container
+    chartContainer.parentNode.insertBefore(breakdownDiv, chartContainer.nextSibling);
+  }
+  
   breakdownDiv.style.display = 'block';
   breakdownDiv.innerHTML = '<div class="loading">Loading game breakdown...</div>';
   
@@ -1714,7 +1620,7 @@ async function showDailyBreakdown(date) {
     const res = await fetch(`/api/daily-game-hours/${date}`);
     
     if (!res.ok) {
-      breakdownDiv.innerHTML = '<div class="error">No detailed data available for this date. Data started being tracked after this feature was added.</div>';
+      breakdownDiv.innerHTML = '<div class="error">No detailed game data available for this date.</div>';
       return;
     }
     
@@ -1730,33 +1636,70 @@ async function showDailyBreakdown(date) {
       return date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     };
     
+    // Helper function to convert decimal hours to hours and minutes with proper pluralization
+    const formatHours = (hoursDecimal) => {
+      const hours = Math.floor(hoursDecimal);
+      const minutes = Math.round((hoursDecimal - hours) * 60);
+      
+      // Handle edge cases
+      if (hours === 0 && minutes === 0) {
+        return '0 minutes';
+      }
+      
+      const hourText = hours === 1 ? 'hour' : 'hours';
+      const minuteText = minutes === 1 ? 'minute' : 'minutes';
+      
+      if (hours === 0) {
+        return `${minutes} ${minuteText}`;
+      } else if (minutes === 0) {
+        return `${hours} ${hourText}`;
+      } else {
+        return `${hours} ${hourText} ${minutes} ${minuteText}`;
+      }
+    };
+    
+    // Calculate total hours for the day and format it
     const totalHoursThisDay = games.reduce((sum, g) => sum + g.hours_this_day, 0);
+    const formattedTotalHours = formatHours(totalHoursThisDay);
     
     breakdownDiv.innerHTML = `
       <div class="breakdown-header">
         <h4>Games Played on ${formatDate(date)}</h4>
-        <p class="breakdown-summary">${games.length} game${games.length !== 1 ? 's' : ''} • ${totalHoursThisDay.toFixed(1)}h total</p>
-        <button class="btn small secondary" onclick="document.getElementById('daily-breakdown').style.display='none'">Close</button>
+        <p class="breakdown-summary">${games.length} game${games.length !== 1 ? 's' : ''} • ${formattedTotalHours} played this day</p>
+        <button class="btn small secondary" onclick="hideDailyBreakdown()">Close</button>
       </div>
       <div class="breakdown-list">
-        ${games.map((game, index) => `
-          <div class="breakdown-game-item" style="animation-delay: ${0.1 + index * 0.05}s">
-            ${game.cover_url ? `<img src="${game.cover_url}" class="breakdown-game-cover" alt="${game.game_title}" />` : ''}
-            <div class="breakdown-game-info">
-              <div class="breakdown-game-title">${game.game_title}</div>
-              <div class="breakdown-game-hours">
-                <span class="hours-this-day">+${game.hours_this_day.toFixed(1)}h this day</span>
-                <span class="total-hours">${game.total_hours.toFixed(1)}h total</span>
+        ${games.map((game, index) => {
+          // Format the hours for this specific game
+          const hoursThisDayFormatted = formatHours(game.hours_this_day);
+          const totalHoursFormatted = formatHours(game.total_hours);
+          
+          return `
+            <div class="breakdown-game-item" style="animation-delay: ${0.1 + index * 0.05}s">
+              ${game.cover_url ? `<img src="${game.cover_url}" class="breakdown-game-cover" alt="${game.game_title}" />` : ''}
+              <div class="breakdown-game-info">
+                <div class="breakdown-game-title">${game.game_title}</div>
+                <div class="breakdown-game-hours">
+                  <span class="hours-this-day">+${hoursThisDayFormatted} played this day</span>
+                  <span class="total-hours">${totalHoursFormatted} total by this date</span>
+                </div>
               </div>
             </div>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       </div>
     `;
     
   } catch (err) {
     console.error('Error loading daily breakdown:', err);
     breakdownDiv.innerHTML = '<div class="error">Error loading game breakdown</div>';
+  }
+}
+
+function hideDailyBreakdown() {
+  const breakdownDiv = document.getElementById('daily-breakdown');
+  if (breakdownDiv) {
+    breakdownDiv.style.display = 'none';
   }
 }
 
@@ -2313,7 +2256,6 @@ function openTop10Editor() {
 }
 
 // Available games for Top 10 editor - Search-based
-// Available games for Top 10 editor - Search-based
 function setupTop10Search() {
     const searchInput = document.getElementById('top10-search');
     
@@ -2427,34 +2369,148 @@ function addGameToTop10(gameId) {
 function renderTop10Selection() {
     const selectionList = document.getElementById('top10-selection');
     
+    if (!selectionList) {
+        console.error('top10-selection element not found!');
+        return;
+    }
+    
     if (top10Games.length === 0) {
         selectionList.innerHTML = '<div class="empty-state">No games in your Top 10 yet. Search and add games above!</div>';
         return;
     }
     
-    selectionList.innerHTML = top10Games.map((game, index) => `
-        <div class="top10-selection-item" data-game-id="${game.game_id}">
-            <div class="drag-handle" style="cursor: move;">⋮⋮</div>
-            <div class="game-info" style="flex: 1;">
-                <div style="display: flex; align-items: center; gap: 8px;">
+    selectionList.innerHTML = top10Games.map((game, index) => {
+        // Escape HTML in textarea value to prevent issues
+        const escapedWhy = (game.why_i_love_it || '').replace(/"/g, '&quot;');
+        
+        return `
+        <div class="top10-selection-item" 
+             data-game-id="${game.game_id}" 
+             data-index="${index}"
+             draggable="true">
+            <div class="drag-handle">⋮⋮</div>
+            <div class="game-info">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                     ${game.cover_url ? `<img src="${game.cover_url}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;">` : ''}
-                    <div>
+                    <div style="flex: 1;">
                         <strong>#${index + 1}. ${game.title}</strong>
-                        <div style="font-size: 12px; color: var(--text-muted);">
-                            ${game.platform} • ${game.hours_played || 0}h
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                            ${game.platform || 'Unknown'} • ${game.hours_played || 0}h
                         </div>
                     </div>
                 </div>
                 <textarea 
-                    class="why-i-love-it" 
+                    class="why-i-love-it-textarea" 
                     placeholder="Why I love this game..."
-                    style="width: 100%; margin-top: 8px; padding: 8px; border: var(--thin-border); border-radius: 4px; background: rgba(0,0,0,0.3); color: var(--text-color); font-size: 12px; resize: vertical; min-height: 60px;"
-                    oninput="updateTop10Reason(${game.game_id}, this.value)"
+                    data-game-id="${game.game_id}"
+                    style="width: 100%; margin-top: 8px; padding: 8px; border: var(--thin-border); border-radius: 4px; background: rgba(0,0,0,0.3); color: var(--text-color); font-size: 12px; resize: vertical; min-height: 60px; font-family: inherit;"
                 >${game.why_i_love_it || ''}</textarea>
             </div>
-            <button class="remove-game btn-icon" onclick="removeFromTop10(${game.game_id})" title="Remove">🗑️</button>
+            <button class="remove-game btn-icon" data-game-id="${game.game_id}" title="Remove"></button>
         </div>
-    `).join('');
+    `;
+    }).join('');
+    
+    // Setup textarea listeners
+    selectionList.querySelectorAll('.why-i-love-it-textarea').forEach(textarea => {
+        textarea.addEventListener('input', (e) => {
+            const gameId = parseInt(e.target.dataset.gameId);
+            updateTop10Reason(gameId, e.target.value);
+        });
+    });
+    
+    // Setup remove button listeners
+    selectionList.querySelectorAll('.remove-game').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const gameId = parseInt(btn.dataset.gameId);
+            removeFromTop10(gameId);
+        });
+    });
+    
+    // Setup drag and drop
+    setupTop10DragAndDrop();
+}
+
+function setupTop10DragAndDrop() {
+    const items = document.querySelectorAll('.top10-selection-item');
+    let draggedItem = null;
+    let draggedIndex = null;
+    
+    items.forEach((item, index) => {
+        // Drag start
+        item.addEventListener('dragstart', (e) => {
+            draggedItem = item;
+            draggedIndex = parseInt(item.dataset.index);
+            item.style.opacity = '0.5';
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        
+        // Drag end
+        item.addEventListener('dragend', (e) => {
+            item.style.opacity = '1';
+            items.forEach(i => {
+                i.style.borderTop = '';
+                i.style.borderBottom = '';
+            });
+        });
+        
+        // Drag over
+        item.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            
+            if (item !== draggedItem) {
+                const rect = item.getBoundingClientRect();
+                const midpoint = rect.top + rect.height / 2;
+                
+                if (e.clientY < midpoint) {
+                    item.style.borderTop = '2px solid var(--accent)';
+                    item.style.borderBottom = '';
+                } else {
+                    item.style.borderTop = '';
+                    item.style.borderBottom = '2px solid var(--accent)';
+                }
+            }
+        });
+        
+        // Drag leave
+        item.addEventListener('dragleave', (e) => {
+            item.style.borderTop = '';
+            item.style.borderBottom = '';
+        });
+        
+        // Drop
+        item.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (item !== draggedItem) {
+                const dropIndex = parseInt(item.dataset.index);
+                const rect = item.getBoundingClientRect();
+                const midpoint = rect.top + rect.height / 2;
+                
+                let newIndex = dropIndex;
+                if (e.clientY > midpoint) {
+                    newIndex = dropIndex + 1;
+                }
+                
+                if (draggedIndex < newIndex) {
+                    newIndex--;
+                }
+                
+                // Reorder the array
+                const [movedGame] = top10Games.splice(draggedIndex, 1);
+                top10Games.splice(newIndex, 0, movedGame);
+                
+                // Re-render
+                renderTop10Selection();
+            }
+            
+            item.style.borderTop = '';
+            item.style.borderBottom = '';
+        });
+    });
 }
 
 function updateTop10Reason(gameId, reason) {
@@ -2571,36 +2627,6 @@ function toggleBatchMode() {
   
   // Force re-render of games to show/hide checkboxes
   applySortingAndFiltering();
-}
-
-function checkBatchActionsSetup() {
-  console.log('=== BATCH ACTIONS SETUP CHECK ===');
-  
-  const batchActions = document.querySelector('.batch-actions');
-  console.log('Batch actions container:', batchActions);
-  
-  const batchUpdate = document.getElementById('batch-update');
-  const batchDelete = document.getElementById('batch-delete');
-  const batchCancel = document.getElementById('batch-cancel');
-  
-  console.log('Batch update button:', batchUpdate);
-  console.log('Batch delete button:', batchDelete);
-  console.log('Batch cancel button:', batchCancel);
-  
-  // Check if event listeners are attached
-  if (batchUpdate) {
-    console.log('Batch update has click listener:', batchUpdate.hasAttribute('data-listener'));
-  }
-  if (batchDelete) {
-    console.log('Batch delete has click listener:', batchDelete.hasAttribute('data-listener'));
-  }
-  if (batchCancel) {
-    console.log('Batch cancel has click listener:', batchCancel.hasAttribute('data-listener'));
-  }
-  
-  console.log('Current batch mode:', batchMode);
-  console.log('Body has batch-mode class:', document.body.classList.contains('batch-mode'));
-  console.log('Batch actions display style:', batchActions ? batchActions.style.display : 'N/A');
 }
 
 function cancelBatchMode() {
