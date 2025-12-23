@@ -420,12 +420,6 @@ document.getElementById('update-all-steam')?.addEventListener('click', async () 
   }
 });
 
-// Sorting and filtering functionality
-document.getElementById('sort-by').addEventListener('change', (e) => {
-  currentSort = e.target.value;
-  applySortingAndFiltering();
-});
-
 // Update filter functions to use new state
 function filterGames() {
   currentFilters.search = document.getElementById('search').value.toLowerCase();
@@ -497,17 +491,7 @@ checkAuth().then(() => {
   document.getElementById('sort-by').value = currentSort;
   
   console.log('App initialization complete');
-  
-  // Debug: Check batch actions setup
-  setTimeout(() => {
-    checkBatchActionsSetup();
-  }, 1000);
 });
-
-// Initialize event listeners for filtering
-document.getElementById('search').addEventListener('input', filterGames);
-document.getElementById('filter-status').addEventListener('change', filterGames);
-document.getElementById('filter-platform').addEventListener('change', filterGames);
 
 // Main sorting and filtering function
 function applySortingAndFiltering() {
@@ -798,7 +782,15 @@ async function deleteGame(id) {
     return;
   }
   
-  if (!confirm('Delete this game? This will also delete all associated achievements.')) return;
+  const game = allGames.find(g => g.id === id);
+  const isSteamGame = game && game.steam_app_id;
+  
+  let confirmMessage = 'Delete this game? This will also delete all associated achievements.';
+  if (isSteamGame) {
+    confirmMessage += '\n\n⚠️ This is a Steam game. It will be marked as excluded and won\'t be re-imported when you sync your Steam library.';
+  }
+  
+  if (!confirm(confirmMessage)) return;
   
   try {
     const response = await fetch(`/api/games/${id}`, { method: 'DELETE' });
@@ -808,6 +800,10 @@ async function deleteGame(id) {
       isLoggedIn = false;
       updateUIForAuth();
       return;
+    }
+    
+    if (isSteamGame) {
+      alert('✓ Game deleted and marked as excluded. It will not be re-imported from Steam.');
     }
     
     fetchGames();
@@ -1329,7 +1325,7 @@ function renderDailyHoursChart(dailyHours) {
   const chartContainer = document.getElementById('daily-hours-chart');
   
   if (!dailyHours || dailyHours.length === 0) {
-    chartContainer.innerHTML = '<div class="empty-state">No daily hours data yet. Data will be recorded daily at 12 PM EST.</div>';
+    chartContainer.innerHTML = '<div class="empty-state">No daily hours data yet. Data will be recorded daily at 12 AM EST.</div>';
     return;
   }
   
@@ -2114,16 +2110,24 @@ async function pickRandomGame() {
       document.getElementById('random-result').innerHTML = `
         <div class="empty-state">${game.error}</div>
       `;
+      // Hide both buttons when no game is found
+      document.getElementById('pick-random-game').style.display = 'none';
+      document.getElementById('reroll-random').style.display = 'none';
       return;
     }
     
     displayRandomGame(game);
+    // Hide the initial "Pick Random Game" button and show only "Reroll"
+    document.getElementById('pick-random-game').style.display = 'none';
     document.getElementById('reroll-random').style.display = '';
     
   } catch (err) {
     document.getElementById('random-result').innerHTML = `
       <div class="error">Error picking random game: ${err.message}</div>
     `;
+    // Show pick button again on error
+    document.getElementById('pick-random-game').style.display = '';
+    document.getElementById('reroll-random').style.display = 'none';
   }
 }
 
@@ -2163,8 +2167,6 @@ function displayRandomGame(game) {
       </div>
     </div>
   `;
-  
-  document.getElementById('reroll-random').style.display = '';
 }
 
 // Helper function to open achievements from random game
@@ -2178,6 +2180,18 @@ function openAchievementsFromRandom(gameId) {
     }, 100);
   }
 }
+
+// Reset button visibility when switching tabs
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    // Reset random game picker when leaving the tab
+    if (btn.dataset.tab !== 'random') {
+      // Reset button visibility when switching away from random tab
+      document.getElementById('pick-random-game').style.display = '';
+      document.getElementById('reroll-random').style.display = 'none';
+    }
+  });
+});
 
 // Top 10 Modal Management
 function setupTop10Modal() {
@@ -2537,7 +2551,7 @@ function moveTop10Down(index) {
 
 function removeFromTop10(gameId) {
   top10Games = top10Games.filter(game => game.game_id !== gameId);
-  renderTop10();
+  renderTop10Selection();
 }
 
 // Available games for Top 10 editor
@@ -2845,10 +2859,16 @@ function setupBatchOperations() {
 
 // Call this after loading games
 async function fetchGames() {
-  const res = await fetch('/api/games');
-  allGames = await res.json();
-  applySortingAndFiltering();
-  setupBatchButton();
+  try {
+    const res = await fetch('/api/games');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allGames = await res.json();
+    applySortingAndFiltering();
+  } catch (err) {
+    console.error('Failed to fetch games:', err);
+    document.getElementById('games-list').innerHTML = 
+      '<div class="error">Failed to load games. Please refresh.</div>';
+  }
 }
 
 async function loadTop10() {

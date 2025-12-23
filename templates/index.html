@@ -288,8 +288,16 @@
               <button id="fix-images" class="btn warning">🔧 Fix Image Associations</button>
               <button id="cleanup-images" class="btn secondary">🧹 Cleanup Orphaned Images</button>
               <button id="record-daily-now" class="btn primary">📊 Record Daily Hours Now</button>
+              <button id="view-excluded-games" class="btn secondary">👁️ View Excluded Games</button>
             </div>
             <div id="admin-tools-result" style="margin-top: 10px;"></div>
+            <div id="excluded-games-list" style="margin-top: 16px; display: none;">
+              <h4>Excluded Steam Games</h4>
+              <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 12px;">
+                These games were deleted and won't be re-imported from Steam. Click "Allow Re-import" to remove them from the exclusion list.
+              </p>
+              <div id="excluded-games-container"></div>
+            </div>
           </div>
         </div>
       </section>

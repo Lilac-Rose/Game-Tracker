@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "gametracker",
       script: "/home/lilacrose/lilacrose.dev2.0/venv/bin/gunicorn",
-      args: "--bind 127.0.0.1:5001 --workers 3 --timeout 180 app:app",
+      args: "--bind 127.0.0.1:5001 --workers 1 --timeout 180 app:app",
       cwd: "/home/lilacrose/lilacrose.dev2.0/gametracker",
       exec_mode: "fork",
       interpreter: "none",

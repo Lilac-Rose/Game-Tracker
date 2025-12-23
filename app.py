@@ -9,6 +9,9 @@ import time
 import traceback
 import threading
 import schedule
+import pytz
+import logging
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +27,18 @@ STEAM_USER_ID = os.getenv("STEAM_USER_ID", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 STEAM_API_LAST_CALL = 0
 STEAM_API_MIN_INTERVAL = 1.2
+_record_lock = threading.Lock()
+_scheduler_initialized = False
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('daily_tracker.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Database helpers
 def get_db():
@@ -112,6 +127,15 @@ def init_db():
         FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE,
         UNIQUE(date, game_id)
     );
+    CREATE TABLE IF NOT EXISTS daily_tracker_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_recorded TEXT,
+        success INTEGER DEFAULT 0,
+        error_message TEXT,
+        games_updated INTEGER DEFAULT 0,
+        hours_recorded REAL DEFAULT 0
+    );
     ''')
     conn.commit()
     conn.close()
@@ -157,7 +181,7 @@ def steam_api_call_with_rate_limit(url):
     time_since_last_call = time.time() - STEAM_API_LAST_CALL
     if time_since_last_call < STEAM_API_MIN_INTERVAL:
         sleep_time = STEAM_API_MIN_INTERVAL - time_since_last_call
-        print(f"Rate limiting: waiting {sleep_time:.2f}s before next Steam API call")
+        logger.info(f"Rate limiting: waiting {sleep_time:.2f}s before next Steam API call")
         time.sleep(sleep_time)
     
     try:
@@ -179,13 +203,13 @@ def get_steam_achievements(app_id, steam_id=None):
         
         if schema_response.status_code != 200:
             if schema_response.status_code == 429:
-                print(f"Rate limited when fetching achievements for app {app_id}")
+                logger.info(f"Rate limited when fetching achievements for app {app_id}")
             return []
             
         try:
             schema_data = schema_response.json()
         except ValueError:
-            print(f"Invalid JSON in schema response for app {app_id}")
+            logger.info(f"Invalid JSON in schema response for app {app_id}")
             return []
             
         schema_achievements = schema_data.get('game', {}).get('availableGameStats', {}).get('achievements', [])
@@ -209,9 +233,9 @@ def get_steam_achievements(app_id, steam_id=None):
                                     'unlocktime': ach.get('unlocktime', 0)
                                 }
                     except ValueError:
-                        print(f"Invalid JSON in user achievements for app {app_id}")
+                        logger.info(f"Invalid JSON in user achievements for app {app_id}")
             except Exception as user_err:
-                print(f"Error fetching user achievements for app {app_id}: {user_err}")
+                logger.error(f"Error fetching user achievements for app {app_id}: {user_err}")
         
         result = []
         for ach in schema_achievements:
@@ -236,7 +260,7 @@ def get_steam_achievements(app_id, steam_id=None):
         
         return result
     except Exception as e:
-        print(f"Error fetching Steam achievements for app {app_id}: {e}")
+        logger.error(f"Error fetching Steam achievements for app {app_id}: {e}")
         return []
     
 def get_steam_game_details(app_id):
@@ -277,7 +301,7 @@ def get_steam_game_details(app_id):
                 details['tags'] = list(dict.fromkeys(details['tags']))[:5]
     
     except Exception as e:
-        print(f"Error fetching Steam game details: {e}")
+        logger.error(f"Error fetching Steam game details: {e}")
     
     return details
 
@@ -293,7 +317,7 @@ def get_total_hours_played():
 def update_all_steam_hours_sync():
     """Synchronously update all Steam game hours"""
     if not STEAM_API_KEY or not STEAM_USER_ID:
-        print("Steam API not configured, skipping auto-update")
+        logger.info("Steam API not configured, skipping auto-update")
         return False
     
     try:
@@ -307,13 +331,13 @@ def update_all_steam_hours_sync():
             conn.close()
             return True
         
-        print(f"Auto-updating {len(steam_games)} Steam games...")
+        logger.info(f"Auto-updating {len(steam_games)} Steam games...")
         
         games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={STEAM_USER_ID}&include_appinfo=1"
         games_response = steam_api_call_with_rate_limit(games_url)
         
         if games_response.status_code != 200:
-            print(f"Steam API returned status {games_response.status_code}")
+            logger.info(f"Steam API returned status {games_response.status_code}")
             conn.close()
             return False
         
@@ -334,57 +358,211 @@ def update_all_steam_hours_sync():
         conn.commit()
         conn.close()
         
-        print(f"Auto-updated {updated_count} Steam games")
+        logger.info(f"Auto-updated {updated_count} Steam games")
         return True
     except Exception as e:
-        print(f"Error auto-updating Steam hours: {e}")
+        logger.error(f"Error auto-updating Steam hours: {e}")
         return False
 
 def record_daily_hours():
-    """Record today's total hours played"""
+    """Record today's total hours played and sync achievements for recently played games"""
+    
+    # Acquire lock to prevent simultaneous execution
+    if not _record_lock.acquire(blocking=False):
+        logger.warning("record_daily_hours already running, skipping this call")
+        return False
+    
+    conn = None
     try:
-        print("Running daily Steam hours update...")
+        # Use EST timezone consistently
+        est = pytz.timezone('US/Eastern')
+        now_est = datetime.now(est)
+        today = now_est.date().isoformat()
+        
+        logger.info(f"=" * 60)
+        logger.info(f"Starting daily Steam hours update for {today}")
+        logger.info(f"EST time: {now_est}")
+        logger.info(f"=" * 60)
+        
+        # STEP 1: Import any NEW games from Steam library
+        if STEAM_API_KEY and STEAM_USER_ID:
+            try:
+                logger.info("Checking for new Steam games...")
+                games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={STEAM_USER_ID}&include_appinfo=1"
+                games_response = steam_api_call_with_rate_limit(games_url)
+                
+                if games_response.status_code == 200:
+                    games_data = games_response.json()
+                    steam_games = games_data.get('response', {}).get('games', [])
+                    
+                    conn = get_db()
+                    cur = conn.cursor()
+                    
+                    cur.execute('SELECT steam_app_id FROM games WHERE steam_app_id IS NOT NULL')
+                    existing_app_ids = set(row['steam_app_id'] for row in cur.fetchall())
+                    
+                    cur.execute('SELECT steam_app_id FROM steam_import_status WHERE error_message = "User excluded this game"')
+                    excluded_app_ids = set(row['steam_app_id'] for row in cur.fetchall())
+                    
+                    new_games_count = 0
+                    for game in steam_games:
+                        app_id = game.get('appid')
+                        if app_id not in existing_app_ids and app_id not in excluded_app_ids:
+                            title = game.get('name', f'App {app_id}')
+                            hours_played = round(game.get('playtime_forever', 0) / 60, 1) if game.get('playtime_forever', 0) > 0 else None
+                            cover_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
+                            
+                            cur.execute(
+                                """INSERT INTO games (title, platform, status, hours_played, steam_app_id, cover_url, rating, completion_date) 
+                                   VALUES (?,?,?,?,?,?,?,?)""",
+                                (title, 'PC', 'Playing', hours_played, app_id, cover_url, None, None)
+                            )
+                            
+                            cur.execute(
+                                'INSERT OR REPLACE INTO steam_import_status (steam_app_id, game_imported, achievements_imported) VALUES (?, 1, 1)',
+                                (app_id,)
+                            )
+                            new_games_count += 1
+                    
+                    conn.commit()
+                    
+                    if new_games_count > 0:
+                        logger.info(f"✓ Imported {new_games_count} new Steam games")
+                    else:
+                        logger.info("No new games to import")
+                    
+                    conn.close()
+                    conn = None
+            except Exception as e:
+                logger.error(f"Error importing new Steam games: {e}")
+        
+        # STEP 2: Update hours for ALL existing Steam games
+        logger.info("Updating hours for existing Steam games...")
         update_all_steam_hours_sync()
         
-        today = date.today().isoformat()
+        # STEP 3: Record the daily snapshot
         total_hours = get_total_hours_played()
+        logger.info(f"Total hours played: {total_hours}")
         
         conn = get_db()
         cur = conn.cursor()
         
         cur.execute('SELECT COUNT(*) as count FROM games WHERE hours_played IS NOT NULL AND hours_played > 0')
         games_played = cur.fetchone()['count']
+        logger.info(f"Games with hours: {games_played}")
         
+        # FIX: Use atomic INSERT OR REPLACE instead of check-then-act
+        logger.info(f"Recording daily hours for {today} (using atomic INSERT OR REPLACE)")
         cur.execute('''
-            INSERT OR REPLACE INTO daily_hours_history (date, total_hours, games_played)
-            VALUES (?, ?, ?)
+            INSERT OR REPLACE INTO daily_hours_history (date, total_hours, games_played, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
         ''', (today, total_hours, games_played))
         
+        # Get games with hours to snapshot
         cur.execute('''
-            SELECT id, title, hours_played, cover_url 
+            SELECT id, title, hours_played, cover_url, steam_app_id
             FROM games 
             WHERE hours_played IS NOT NULL AND hours_played > 0
             ORDER BY hours_played DESC
         ''')
         games = cur.fetchall()
+        logger.info(f"Snapshotting {len(games)} games")
         
+        # Get yesterday's snapshot
+        yesterday = (now_est.date() - timedelta(days=1)).isoformat()
+        cur.execute('SELECT game_id, hours_played FROM daily_game_hours WHERE date = ?', (yesterday,))
+        yesterday_hours = {row['game_id']: row['hours_played'] for row in cur.fetchall()}
+        
+        # Delete today's existing snapshot
         cur.execute('DELETE FROM daily_game_hours WHERE date = ?', (today,))
+        
+        games_played_today = []
         
         for game in games:
             cur.execute('''
                 INSERT INTO daily_game_hours (date, game_id, game_title, hours_played, cover_url)
                 VALUES (?, ?, ?, ?, ?)
             ''', (today, game['id'], game['title'], game['hours_played'], game['cover_url']))
+            
+            prev_hours = yesterday_hours.get(game['id'], 0)
+            if game['hours_played'] > prev_hours and game['steam_app_id']:
+                games_played_today.append(game)
+        
+        conn.commit()
+        
+        # Sync achievements for games played today
+        achievements_synced = 0
+        if games_played_today and STEAM_API_KEY:
+            logger.info(f"Syncing achievements for {len(games_played_today)} games played today...")
+            for game in games_played_today:
+                try:
+                    logger.info(f"  Syncing achievements for {game['title']}...")
+                    achievements = get_steam_achievements(game['steam_app_id'])
+                    
+                    if achievements and len(achievements) > 0:
+                        cur.execute('DELETE FROM achievements WHERE game_id = ?', (game['id'],))
+                        
+                        for ach in achievements:
+                            cur.execute(
+                                'INSERT INTO achievements (game_id, title, description, date, unlocked, icon_url) VALUES (?,?,?,?,?,?)',
+                                (game['id'], ach.get('name'), ach.get('description'), 
+                                 ach.get('unlock_date'), ach.get('achieved', 0), ach.get('icon'))
+                            )
+                        
+                        conn.commit()
+                        achievements_synced += len(achievements)
+                        logger.info(f"  ✓ Synced {len(achievements)} achievements")
+                except Exception as e:
+                    logger.error(f"  ✗ Failed to sync achievements: {e}")
+        
+        # Log success
+        cur.execute('''
+            INSERT INTO daily_tracker_log (date_recorded, success, games_updated, hours_recorded)
+            VALUES (?, 1, ?, ?)
+        ''', (today, len(games), total_hours))
         
         conn.commit()
         conn.close()
+        conn = None
         
-        print(f"Recorded daily hours: {today} - {total_hours}h across {games_played} games")
+        logger.info(f"=" * 60)
+        logger.info(f"✓ SUCCESS: Recorded daily hours for {today}")
+        logger.info(f"  Total hours: {total_hours}h")
+        logger.info(f"  Games tracked: {games_played}")
+        if games_played_today:
+            logger.info(f"  Games played today: {len(games_played_today)}")
+            logger.info(f"  Achievements synced: {achievements_synced}")
+        logger.info(f"=" * 60)
+        
         return True
+        
     except Exception as e:
-        print(f"Error recording daily hours: {e}")
-        traceback.print_exc()
+        error_msg = f"Error recording daily hours: {e}"
+        logger.error(f"=" * 60)
+        logger.error(f"❌ FAILED: {error_msg}")
+        logger.error(traceback.format_exc())
+        logger.error(f"=" * 60)
+        
+        # Log failure
+        try:
+            if conn is None:
+                conn = get_db()
+            cur = conn.cursor()
+            est = pytz.timezone('US/Eastern')
+            today = datetime.now(est).date().isoformat()
+            cur.execute('''
+                INSERT INTO daily_tracker_log (date_recorded, success, error_message)
+                VALUES (?, 0, ?)
+            ''', (today, str(e)[:500]))
+            conn.commit()
+            conn.close()
+        except Exception as log_error:
+            logger.error(f"Failed to log error: {log_error}")
+        
         return False
+    finally:
+        # Always release the lock
+        _record_lock.release()
 
 def get_daily_hours_history(days=30):
     """Get daily hours history for the last N days"""
@@ -406,31 +584,118 @@ def get_daily_hours_history(days=30):
         return history
         
     except Exception as e:
-        print(f"Error getting daily hours history: {e}")
+        logger.error(f"Error getting daily hours history: {e}")
         return []
 
+@app.route('/api/excluded-games', methods=['GET'])
+@login_required
+def get_excluded_games():
+    """Get list of excluded Steam games"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute('''
+            SELECT steam_app_id, last_attempt 
+            FROM steam_import_status 
+            WHERE error_message = "User excluded this game"
+            ORDER BY last_attempt DESC
+        ''')
+        
+        excluded = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        
+        return jsonify(excluded)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/excluded-games/<int:app_id>', methods=['DELETE'])
+@login_required
+def remove_from_excluded(app_id):
+    """Remove a game from the excluded list (allow re-import)"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute('''
+            DELETE FROM steam_import_status 
+            WHERE steam_app_id = ? AND error_message = "User excluded this game"
+        ''', (app_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Game removed from exclusion list'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def schedule_daily_tracking():
-    """Schedule daily hours tracking at 12 PM EST"""
+    """Schedule daily hours tracking at 12:30 PM EST (17:30 UTC)"""
+    global _scheduler_initialized
+    
+    if _scheduler_initialized:
+        logger.warning("Scheduler already initialized, skipping")
+        return
+    
+    _scheduler_initialized = True
+    
     try:
         def job():
-            print(f"Scheduled daily tracking running at {datetime.now()}")
+            est = pytz.timezone('US/Eastern')
+            now = datetime.now(est)
+            logger.info(f"\n{'='*60}")
+            logger.info(f"SCHEDULED JOB TRIGGERED")
+            logger.info(f"Current EST time: {now}")
+            logger.info(f"{'='*60}\n")
             record_daily_hours()
         
-        schedule.every().day.at("17:00").do(job)
+        # 17:30 UTC = 12:30 PM EST (safer than midnight)
+        schedule.every().day.at("17:30").do(job)
         
         def run_scheduler():
+            logger.info("Scheduler thread started")
             while True:
-                schedule.run_pending()
-                time.sleep(60)
+                try:
+                    schedule.run_pending()
+                    time.sleep(60)
+                except Exception as e:
+                    logger.error(f"Scheduler error: {e}")
+                    time.sleep(60)
         
         scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
         scheduler_thread.start()
-        print("Daily hours tracking scheduler started (12 PM EST daily)")
         
-        record_daily_hours()
+        next_run = schedule.next_run()
+        logger.info("=" * 60)
+        logger.info("Daily hours tracking scheduler STARTED")
+        logger.info(f"Schedule: 12:30 PM EST daily (17:30 UTC)")
+        logger.info(f"Next run: {next_run}")
+        logger.info("=" * 60)
+        
+        # Check if we need to record today's data (with delay to avoid conflicts)
+        def delayed_check():
+            time.sleep(5)  # Wait 5 seconds for app to fully start
+            try:
+                est = pytz.timezone('US/Eastern')
+                today = datetime.now(est).date().isoformat()
+                
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute('SELECT id FROM daily_hours_history WHERE date = ?', (today,))
+                if not cur.fetchone():
+                    logger.info(f"No record for {today} found, running initial recording...")
+                    record_daily_hours()
+                else:
+                    logger.info(f"Record for {today} already exists")
+                conn.close()
+            except Exception as e:
+                logger.error(f"Error in delayed check: {e}")
+        
+        threading.Thread(target=delayed_check, daemon=True).start()
+        
     except Exception as e:
-        print(f"Failed to start daily tracking scheduler: {e}")
-        record_daily_hours()
+        logger.error(f"Failed to start scheduler: {e}")
+        logger.error(traceback.format_exc())
 
 # Routes
 @app.route('/')
@@ -493,10 +758,10 @@ def import_steam_library():
         else:
             import_achievements = request.form.get('import_achievements', 'false').lower() == 'true'
     except Exception as e:
-        print(f"Error parsing request data: {e}")
+        logger.error(f"Error parsing request data: {e}")
     
     try:
-        print("Starting Steam library import...")
+        logger.info("Starting Steam library import...")
         
         games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={STEAM_USER_ID}&include_appinfo=1&include_played_free_games=1"
         games_response = steam_api_call_with_rate_limit(games_url)
@@ -529,6 +794,10 @@ def import_steam_library():
         
         cur.execute('SELECT steam_app_id FROM games WHERE steam_app_id IS NOT NULL')
         existing_app_ids = set(row['steam_app_id'] for row in cur.fetchall())
+
+        # Get excluded games (ones marked as excluded in import status)
+        cur.execute('SELECT steam_app_id FROM steam_import_status WHERE error_message = "User excluded this game"')
+        excluded_app_ids = set(row['steam_app_id'] for row in cur.fetchall())
         
         imported_count = 0
         skipped_count = 0
@@ -546,6 +815,11 @@ def import_steam_library():
         for i, game in enumerate(steam_games):
             app_id = game.get('appid')
             title = game.get('name', f'App {app_id}')
+
+            if app_id in excluded_app_ids:
+                skipped_count += 1
+                logger.info(f"Skipping excluded game: {title} (app_id: {app_id})")
+                continue
             
             status = import_status.get(app_id)
             
@@ -657,7 +931,8 @@ def import_steam_library():
     except requests.exceptions.ConnectionError:
         return jsonify({'error': 'Cannot connect to Steam API. Please check your internet connection.'}), 503
     except Exception as e:
-        traceback.print_exc()
+        logger.error(f'Unexpected error in import_steam_library: {str(e)}')
+        logger.error(traceback.format_exc())
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
 
 @app.route('/api/top10', methods=['GET', 'POST', 'PUT'])
@@ -777,6 +1052,51 @@ def api_daily_game_hours(date):
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/tracker-logs')
+@login_required
+def api_tracker_logs():
+    """View tracker execution logs"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Check if table exists
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_tracker_log'")
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({'error': 'daily_tracker_log table does not exist yet'}), 404
+        
+        cur.execute('''
+            SELECT * FROM daily_tracker_log 
+            ORDER BY timestamp DESC 
+            LIMIT 30
+        ''')
+        logs = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return jsonify(logs)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/scheduler-status')
+@login_required
+def api_scheduler_status():
+    """Check scheduler status"""
+    try:
+        import schedule
+        jobs = schedule.jobs
+        
+        est = pytz.timezone('US/Eastern')
+        now = datetime.now(est)
+        
+        return jsonify({
+            'current_time_est': str(now),
+            'jobs_scheduled': len(jobs),
+            'next_run_utc': str(jobs[0].next_run) if jobs else None,
+            'schedule_time': '12:30 PM EST (17:30 UTC) daily'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/record-daily-hours-now', methods=['POST'])
 @login_required
 def api_record_daily_hours_now():
@@ -792,40 +1112,44 @@ def api_record_daily_hours_now():
     
 @app.route('/api/games')
 def api_games():
-    conn = get_db()
-    cur = conn.cursor()
-    
-    cur.execute('''
-        SELECT g.*, 
-               COUNT(CASE WHEN a.unlocked=1 THEN 1 END) as unlocked_achievements,
-               COUNT(a.id) as total_achievements,
-               CASE 
-                 WHEN COUNT(a.id) > 0 THEN 
-                   ROUND((COUNT(CASE WHEN a.unlocked=1 THEN 1 END) * 100.0 / COUNT(a.id)), 1)
-                 ELSE 0 
-               END as completion_percentage
-        FROM games g
-        LEFT JOIN achievements a ON g.id = a.game_id
-        GROUP BY g.id
-        ORDER BY g.is_favorite DESC, g.created_at DESC
-    ''')
-    rows = [dict(r) for r in cur.fetchall()]
-    
-    for game in rows:
-        cur.execute('SELECT tag FROM tags WHERE game_id=?', (game['id'],))
-        game['tags'] = [r['tag'] for r in cur.fetchall()]
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
         
-        if game['total_achievements'] > 0:
-            game['achievement_progress'] = {
-                'unlocked_achievements': game['unlocked_achievements'],
-                'total_achievements': game['total_achievements'],
-                'completion_percentage': game['completion_percentage']
-            }
-        else:
-            game['achievement_progress'] = None
-    
-    conn.close()
-    return jsonify(rows)
+        cur.execute('''
+            SELECT g.*, 
+                   COUNT(CASE WHEN a.unlocked=1 THEN 1 END) as unlocked_achievements,
+                   COUNT(a.id) as total_achievements,
+                   CASE 
+                     WHEN COUNT(a.id) > 0 THEN 
+                       ROUND((COUNT(CASE WHEN a.unlocked=1 THEN 1 END) * 100.0 / COUNT(a.id)), 1)
+                     ELSE 0 
+                   END as completion_percentage
+            FROM games g
+            LEFT JOIN achievements a ON g.id = a.game_id
+            GROUP BY g.id
+            ORDER BY g.is_favorite DESC, g.created_at DESC
+        ''')
+        rows = [dict(r) for r in cur.fetchall()]
+        
+        for game in rows:
+            cur.execute('SELECT tag FROM tags WHERE game_id=?', (game['id'],))
+            game['tags'] = [r['tag'] for r in cur.fetchall()]
+            
+            if game['total_achievements'] > 0:
+                game['achievement_progress'] = {
+                    'unlocked_achievements': game['unlocked_achievements'],
+                    'total_achievements': game['total_achievements'],
+                    'completion_percentage': game['completion_percentage']
+                }
+            else:
+                game['achievement_progress'] = None
+        
+        return jsonify(rows)
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/api/games/<int:game_id>', methods=['GET', 'PUT', 'DELETE'])
 def api_game(game_id):
@@ -868,6 +1192,18 @@ def api_game(game_id):
         return ('', 204)
     
     else:  # DELETE
+        # Mark as excluded if it's a Steam game so it won't be re-imported
+        cur.execute('SELECT steam_app_id FROM games WHERE id=?', (game_id,))
+        game = cur.fetchone()
+        
+        if game and game['steam_app_id']:
+            # Mark this Steam app ID as excluded
+            cur.execute('''
+                INSERT OR REPLACE INTO steam_import_status 
+                (steam_app_id, game_imported, achievements_imported, error_message) 
+                VALUES (?, 0, 0, 'User excluded this game')
+            ''', (game['steam_app_id'],))
+        
         cur.execute('DELETE FROM games WHERE id=?', (game_id,))
         conn.commit()
         conn.close()
@@ -1207,114 +1543,117 @@ def api_batch_delete():
 
 @app.route('/api/stats')
 def api_stats():
-    conn = get_db()
-    cur = conn.cursor()
-    
-    cur.execute('SELECT COUNT(*) as total FROM games')
-    total = cur.fetchone()['total']
-    
-    cur.execute("SELECT COUNT(*) as completed FROM games WHERE status='Completed'")
-    completed = cur.fetchone()['completed']
-    
-    cur.execute('SELECT SUM(hours_played) as total_hours FROM games')
-    total_hours = cur.fetchone()['total_hours'] or 0
-    
-    cur.execute('SELECT COUNT(*) as total_achievements FROM achievements WHERE unlocked=1')
-    achievements_unlocked = cur.fetchone()['total_achievements']
-    
-    cur.execute('SELECT COUNT(*) as total_achievements FROM achievements')
-    achievements_total = cur.fetchone()['total_achievements']
-    
-    cur.execute('''
-        SELECT g.id, g.title, 
-               COUNT(CASE WHEN a.unlocked=1 THEN 1 END) as unlocked_achievements,
-               COUNT(a.id) as total_achievements,
-               CASE 
-                 WHEN COUNT(a.id) > 0 THEN 
-                   ROUND((COUNT(CASE WHEN a.unlocked=1 THEN 1 END) * 100.0 / COUNT(a.id)), 1)
-                 ELSE 0 
-               END as completion_percentage
-        FROM games g
-        LEFT JOIN achievements a ON g.id = a.game_id
-        GROUP BY g.id
-        HAVING total_achievements > 0
-        ORDER BY completion_percentage DESC, total_achievements DESC
-    ''')
-    achievement_progress = [dict(r) for r in cur.fetchall()]
-    
-    cur.execute('''
-        SELECT status, COUNT(*) as count FROM games 
-        WHERE status IS NOT NULL AND status != ''
-        GROUP BY status
-        ORDER BY count DESC
-    ''')
-    status_breakdown = {row['status']: row['count'] for row in cur.fetchall()}
-    
-    cur.execute('''
-        SELECT platform, COUNT(*) as count FROM games 
-        WHERE platform IS NOT NULL AND platform != ''
-        GROUP BY platform
-        ORDER BY count DESC
-    ''')
-    platform_breakdown = {row['platform']: row['count'] for row in cur.fetchall()}
-    
-    cur.execute('''
-        SELECT id, title, cover_url, completion_date, hours_played, rating 
-        FROM games 
-        WHERE status='Completed' AND completion_date IS NOT NULL
-        ORDER BY completion_date DESC
-        LIMIT 5
-    ''')
-    recent_completions = [dict(r) for r in cur.fetchall()]
-    
-    cur.execute('SELECT AVG(rating) as avg_rating FROM games WHERE rating IS NOT NULL')
-    avg_rating = cur.fetchone()['avg_rating']
-    
-    cur.execute('''
-        SELECT title, hours_played 
-        FROM games 
-        WHERE hours_played IS NOT NULL AND hours_played > 0
-        ORDER BY hours_played DESC 
-        LIMIT 1
-    ''')
-    most_played = cur.fetchone()
-    
-    cur.execute('''
-        SELECT 
-            SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END) as five_star,
-            SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END) as four_star,
-            SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END) as three_star,
-            SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END) as two_star,
-            SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) as one_star,
-            SUM(CASE WHEN rating IS NULL THEN 1 ELSE 0 END) as unrated
-        FROM games
-    ''')
-    rating_distribution = dict(cur.fetchone())
-    
-    completion_rate = round((completed / total * 100), 1) if total > 0 else 0
-    avg_hours_per_game = round(total_hours / total, 1) if total > 0 else 0
-    
-    conn.close()
-    
-    daily_hours_history = get_daily_hours_history(30)
-    
-    return jsonify({
-        'total_games': total,
-        'completed_games': completed,
-        'completion_rate': completion_rate,
-        'total_hours': round(total_hours, 1),
-        'avg_hours_per_game': avg_hours_per_game,
-        'achievements_unlocked': achievements_unlocked,
-        'achievements_total': achievements_total,
-        'achievement_progress': achievement_progress,
-        'status_breakdown': status_breakdown,
-        'platform_breakdown': platform_breakdown,
-        'recent_completions': recent_completions,
-        'avg_rating': round(avg_rating, 1) if avg_rating else 0,
-        'most_played': dict(most_played) if most_played else None,
-        'rating_distribution': rating_distribution,
-        'daily_hours_history': daily_hours_history
-    })
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute('SELECT COUNT(*) as total FROM games')
+        total = cur.fetchone()['total']
+        
+        cur.execute("SELECT COUNT(*) as completed FROM games WHERE status='Completed'")
+        completed = cur.fetchone()['completed']
+        
+        cur.execute('SELECT SUM(hours_played) as total_hours FROM games')
+        total_hours = cur.fetchone()['total_hours'] or 0
+        
+        cur.execute('SELECT COUNT(*) as total_achievements FROM achievements WHERE unlocked=1')
+        achievements_unlocked = cur.fetchone()['total_achievements']
+        
+        cur.execute('SELECT COUNT(*) as total_achievements FROM achievements')
+        achievements_total = cur.fetchone()['total_achievements']
+        
+        cur.execute('''
+            SELECT g.id, g.title, 
+                   COUNT(CASE WHEN a.unlocked=1 THEN 1 END) as unlocked_achievements,
+                   COUNT(a.id) as total_achievements,
+                   CASE 
+                     WHEN COUNT(a.id) > 0 THEN 
+                       ROUND((COUNT(CASE WHEN a.unlocked=1 THEN 1 END) * 100.0 / COUNT(a.id)), 1)
+                     ELSE 0 
+                   END as completion_percentage
+            FROM games g
+            LEFT JOIN achievements a ON g.id = a.game_id
+            GROUP BY g.id
+            HAVING total_achievements > 0
+            ORDER BY completion_percentage DESC, total_achievements DESC
+        ''')
+        achievement_progress = [dict(r) for r in cur.fetchall()]
+        
+        cur.execute('''
+            SELECT status, COUNT(*) as count FROM games 
+            WHERE status IS NOT NULL AND status != ''
+            GROUP BY status
+            ORDER BY count DESC
+        ''')
+        status_breakdown = {row['status']: row['count'] for row in cur.fetchall()}
+        
+        cur.execute('''
+            SELECT platform, COUNT(*) as count FROM games 
+            WHERE platform IS NOT NULL AND platform != ''
+            GROUP BY platform
+            ORDER BY count DESC
+        ''')
+        platform_breakdown = {row['platform']: row['count'] for row in cur.fetchall()}
+        
+        cur.execute('''
+            SELECT id, title, cover_url, completion_date, hours_played, rating 
+            FROM games 
+            WHERE status='Completed' AND completion_date IS NOT NULL
+            ORDER BY completion_date DESC
+            LIMIT 5
+        ''')
+        recent_completions = [dict(r) for r in cur.fetchall()]
+        
+        cur.execute('SELECT AVG(rating) as avg_rating FROM games WHERE rating IS NOT NULL')
+        avg_rating = cur.fetchone()['avg_rating']
+        
+        cur.execute('''
+            SELECT title, hours_played 
+            FROM games 
+            WHERE hours_played IS NOT NULL AND hours_played > 0
+            ORDER BY hours_played DESC 
+            LIMIT 1
+        ''')
+        most_played = cur.fetchone()
+        
+        cur.execute('''
+            SELECT 
+                SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END) as five_star,
+                SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END) as four_star,
+                SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END) as three_star,
+                SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END) as two_star,
+                SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) as one_star,
+                SUM(CASE WHEN rating IS NULL THEN 1 ELSE 0 END) as unrated
+            FROM games
+        ''')
+        rating_distribution = dict(cur.fetchone())
+        
+        completion_rate = round((completed / total * 100), 1) if total > 0 else 0
+        avg_hours_per_game = round(total_hours / total, 1) if total > 0 else 0
+        
+        daily_hours_history = get_daily_hours_history(30)
+        
+        return jsonify({
+            'total_games': total,
+            'completed_games': completed,
+            'completion_rate': completion_rate,
+            'total_hours': round(total_hours, 1),
+            'avg_hours_per_game': avg_hours_per_game,
+            'achievements_unlocked': achievements_unlocked,
+            'achievements_total': achievements_total,
+            'achievement_progress': achievement_progress,
+            'status_breakdown': status_breakdown,
+            'platform_breakdown': platform_breakdown,
+            'recent_completions': recent_completions,
+            'avg_rating': round(avg_rating, 1) if avg_rating else 0,
+            'most_played': dict(most_played) if most_played else None,
+            'rating_distribution': rating_distribution,
+            'daily_hours_history': daily_hours_history
+        })
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/api/games/<int:game_id>/completionist', methods=['GET', 'POST'])
 def api_completionist_achievements(game_id):
@@ -1339,14 +1678,22 @@ def api_completionist_achievements(game_id):
         conn.close()
         return jsonify({'id': new_id}), 201
     else:
+        # FIX: Don't use f-string for SQL ORDER BY - prevents SQL injection
         sort_by = request.args.get('sort', 'date')
         
         if sort_by == 'difficulty':
-            order = 'difficulty DESC'
+            cur.execute('''
+                SELECT * FROM completionist_achievements 
+                WHERE game_id=? 
+                ORDER BY difficulty DESC
+            ''', (game_id,))
         else:
-            order = 'created_at DESC'
+            cur.execute('''
+                SELECT * FROM completionist_achievements 
+                WHERE game_id=? 
+                ORDER BY created_at DESC
+            ''', (game_id,))
         
-        cur.execute(f'SELECT * FROM completionist_achievements WHERE game_id=? ORDER BY {order}', (game_id,))
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
         return jsonify(rows)
@@ -1378,43 +1725,49 @@ def api_completionist_achievement(game_id, comp_id):
 
 @app.route('/api/completionist/all')
 def api_all_completionist():
-    conn = get_db()
-    cur = conn.cursor()
-    
-    sort_by = request.args.get('sort', 'date')
-    filter_status = request.args.get('status', 'all')
-    
-    if sort_by == 'difficulty':
-        order = 'ca.difficulty DESC'
-    elif sort_by == 'date':
-        order = 'ca.created_at DESC'
-    else:
-        order = 'ca.created_at DESC'
-    
-    if filter_status == 'completed':
-        cur.execute(f'''
-            SELECT ca.*, g.title as game_title, g.id as game_id FROM completionist_achievements ca
-            JOIN games g ON ca.game_id = g.id
-            WHERE ca.completed = 1
-            ORDER BY {order}
-        ''')
-    elif filter_status == 'incomplete':
-        cur.execute(f'''
-            SELECT ca.*, g.title as game_title, g.id as game_id FROM completionist_achievements ca
-            JOIN games g ON ca.game_id = g.id
-            WHERE ca.completed = 0
-            ORDER BY {order}
-        ''')
-    else:
-        cur.execute(f'''
-            SELECT ca.*, g.title as game_title, g.id as game_id FROM completionist_achievements ca
-            JOIN games g ON ca.game_id = g.id
-            ORDER BY {order}
-        ''')
-    
-    rows = [dict(r) for r in cur.fetchall()]
-    conn.close()
-    return jsonify(rows)
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        sort_by = request.args.get('sort', 'date')
+        filter_status = request.args.get('status', 'all')
+        
+        # FIX: Don't use f-string for SQL - prevents injection
+        if sort_by == 'difficulty':
+            order_clause = 'ca.difficulty DESC'
+        else:
+            order_clause = 'ca.created_at DESC'
+        
+        if filter_status == 'completed':
+            cur.execute(f'''
+                SELECT ca.*, g.title as game_title, g.id as game_id 
+                FROM completionist_achievements ca
+                JOIN games g ON ca.game_id = g.id
+                WHERE ca.completed = 1
+                ORDER BY {order_clause}
+            ''')
+        elif filter_status == 'incomplete':
+            cur.execute(f'''
+                SELECT ca.*, g.title as game_title, g.id as game_id 
+                FROM completionist_achievements ca
+                JOIN games g ON ca.game_id = g.id
+                WHERE ca.completed = 0
+                ORDER BY {order_clause}
+            ''')
+        else:
+            cur.execute(f'''
+                SELECT ca.*, g.title as game_title, g.id as game_id 
+                FROM completionist_achievements ca
+                JOIN games g ON ca.game_id = g.id
+                ORDER BY {order_clause}
+            ''')
+        
+        rows = [dict(r) for r in cur.fetchall()]
+        return jsonify(rows)
+    finally:
+        if conn:
+            conn.close()
 
 schedule_daily_tracking()
 
