@@ -11,7 +11,6 @@ import threading
 import schedule
 import pytz
 import logging
-import threading
 
 # Load environment variables
 load_dotenv()
@@ -27,8 +26,6 @@ STEAM_USER_ID = os.getenv("STEAM_USER_ID", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 STEAM_API_LAST_CALL = 0
 STEAM_API_MIN_INTERVAL = 1.2
-_record_lock = threading.Lock()
-_scheduler_initialized = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +37,342 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Database helpers
+class DailyHoursTracker:
+    """
+    Daily hours tracker that records snapshots at midnight EST.
+    Fixed to properly handle timezone conversion.
+    """
+    
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.est = pytz.timezone('US/Eastern')
+    
+    def get_current_date_est(self):
+        """Get current date in EST timezone - FIXED"""
+        # Get current UTC time, convert to EST, then get the date
+        utc_now = datetime.now(pytz.UTC)
+        est_now = utc_now.astimezone(self.est)
+        return est_now.date()
+    
+    def record_daily_snapshot(self):
+        try:
+            current_date = self.get_current_date_est()
+            date_str = current_date.isoformat()
+            
+            logger.info(f"=" * 60)
+            logger.info(f"Recording daily snapshot for {date_str}")
+            
+            # FIXED: Better timezone logging
+            utc_now = datetime.now(pytz.UTC)
+            est_now = utc_now.astimezone(self.est)
+            logger.info(f"UTC time: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            logger.info(f"EST time: {est_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            logger.info(f"Date being recorded: {date_str}")
+            
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            
+            # Check if we already have a snapshot for today
+            cur.execute('SELECT id FROM daily_snapshots WHERE date = ?', (date_str,))
+            existing_snapshot = cur.fetchone()
+            
+            # Get current total hours across all games
+            cur.execute('SELECT SUM(hours_played) as total FROM games WHERE hours_played IS NOT NULL')
+            row = cur.fetchone()
+            total_hours = row['total'] or 0
+            
+            # Count games with hours
+            cur.execute('SELECT COUNT(*) as count FROM games WHERE hours_played > 0')
+            games_count = cur.fetchone()['count']
+            
+            if existing_snapshot:
+                # Update existing snapshot
+                logger.info(f"Updating existing snapshot for {date_str}")
+                cur.execute('''
+                    UPDATE daily_snapshots 
+                    SET total_hours = ?, games_played = ?, created_at = CURRENT_TIMESTAMP
+                    WHERE date = ?
+                ''', (total_hours, games_count, date_str))
+                
+                # Delete existing game snapshots for this date
+                cur.execute('DELETE FROM daily_game_snapshots WHERE date = ?', (date_str,))
+            else:
+                # Insert new snapshot
+                logger.info(f"Creating new snapshot for {date_str}")
+                cur.execute('''
+                    INSERT INTO daily_snapshots (date, total_hours, games_played)
+                    VALUES (?, ?, ?)
+                ''', (date_str, total_hours, games_count))
+            
+            # Snapshot individual game hours
+            cur.execute('''
+                SELECT id, title, hours_played, cover_url 
+                FROM games 
+                WHERE hours_played IS NOT NULL AND hours_played > 0
+            ''')
+            games = cur.fetchall()
+            
+            for game in games:
+                cur.execute('''
+                    INSERT INTO daily_game_snapshots (date, game_id, game_title, hours_played, cover_url)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (date_str, game['id'], game['title'], game['hours_played'], game['cover_url']))
+            
+            conn.commit()
+            conn.close()
+            
+            action = "updated" if existing_snapshot else "recorded"
+            logger.info(f"✓ Snapshot {action}: {total_hours}h across {games_count} games")
+            logger.info(f"=" * 60)
+            
+            return {
+                'success': True,
+                'date': date_str,
+                'total_hours': total_hours,
+                'games_count': games_count,
+                'updated': bool(existing_snapshot),
+                'message': f'Snapshot {action} for {date_str}'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error recording snapshot: {e}")
+            logger.error(traceback.format_exc())
+            return {
+                'success': False,
+                'error': str(e)
+            }
+        
+    def get_daily_history(self, days=30):
+        """
+        Get daily hours history for the last N days.
+        Automatically calculates daily changes.
+        
+        Returns: list of dicts with date, total_hours, hours_added, games_played
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            
+            # Get snapshots for the last N days
+            cur.execute('''
+                SELECT date, total_hours, games_played
+                FROM daily_snapshots
+                ORDER BY date DESC
+                LIMIT ?
+            ''', (days,))
+            
+            snapshots = [dict(row) for row in cur.fetchall()]
+            snapshots.reverse()  # Oldest first for calculation
+            
+            conn.close()
+            
+            if not snapshots:
+                return []
+            
+            # Calculate daily changes
+            result = []
+            for i, snapshot in enumerate(snapshots):
+                hours_added = 0
+                
+                if i > 0:
+                    # Calculate change from previous day
+                    prev_hours = snapshots[i - 1]['total_hours']
+                    hours_added = snapshot['total_hours'] - prev_hours
+                
+                result.append({
+                    'date': snapshot['date'],
+                    'total_hours': round(snapshot['total_hours'], 1),
+                    'hours_added': round(hours_added, 1),
+                    'games_played': snapshot['games_played']
+                })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting daily history: {e}")
+            return []
+    
+    def get_games_played_on_date(self, date_str):
+        """
+        Get games that had hours added on a specific date.
+        Compares the snapshot for date_str with the previous day's snapshot.
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            
+            # Get snapshot for the requested date
+            cur.execute('''
+                SELECT game_id, game_title, hours_played, cover_url
+                FROM daily_game_snapshots
+                WHERE date = ?
+                ORDER BY hours_played DESC
+            ''', (date_str,))
+            
+            current_snapshot = [dict(row) for row in cur.fetchall()]
+            
+            if not current_snapshot:
+                conn.close()
+                return []
+            
+            # Get previous day's snapshot
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+            prev_date = (date_obj - timedelta(days=1)).isoformat()
+            
+            cur.execute('''
+                SELECT game_id, hours_played
+                FROM daily_game_snapshots
+                WHERE date = ?
+            ''', (prev_date,))
+            
+            prev_snapshot = {row['game_id']: row['hours_played'] for row in cur.fetchall()}
+            conn.close()
+            
+            # If no previous snapshot exists, return special flag
+            if not prev_snapshot:
+                return [{
+                    'is_first_day': True,
+                    'date': date_str
+                }]
+            
+            # Calculate games played that day
+            result = []
+            for game in current_snapshot:
+                prev_hours = prev_snapshot.get(game['game_id'], 0)
+                hours_added = game['hours_played'] - prev_hours
+                
+                # Only include games where hours increased
+                if hours_added > 0.01:
+                    result.append({
+                        'game_id': game['game_id'],
+                        'game_title': game['game_title'],
+                        'hours_added': round(hours_added, 1),
+                        'total_hours': round(game['hours_played'], 1),
+                        'cover_url': game['cover_url']
+                    })
+            
+            # Sort by hours added that day
+            result.sort(key=lambda x: x['hours_added'], reverse=True)
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting games for date {date_str}: {e}")
+            logger.error(traceback.format_exc())
+            return []
+    
+    def create_tables(self):
+        """Create necessary database tables"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            
+            # Main daily snapshots table
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS daily_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL UNIQUE,
+                    total_hours REAL NOT NULL,
+                    games_played INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Per-game snapshots table
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS daily_game_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    game_id INTEGER NOT NULL,
+                    game_title TEXT NOT NULL,
+                    hours_played REAL NOT NULL,
+                    cover_url TEXT,
+                    UNIQUE(date, game_id),
+                    FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Index for faster queries
+            cur.execute('''
+                CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date 
+                ON daily_snapshots(date)
+            ''')
+            
+            cur.execute('''
+                CREATE INDEX IF NOT EXISTS idx_daily_game_snapshots_date 
+                ON daily_game_snapshots(date)
+            ''')
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info("Daily snapshot tables created successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error creating tables: {e}")
+            return False
+
+
+def setup_daily_scheduler(tracker):
+    """
+    Set up scheduler to run at midnight EST every day.
+    FIXED: Now runs at 00:05 EST (05:05 UTC) to ensure we're past midnight
+    """
+    def job():
+        """Job that runs just after midnight EST"""
+        logger.info("\n" + "=" * 60)
+        logger.info("SCHEDULED JOB TRIGGERED - Recording daily snapshot")
+        
+        utc_now = datetime.now(pytz.UTC)
+        est_now = utc_now.astimezone(tracker.est)
+        logger.info(f"UTC time: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        logger.info(f"EST time: {est_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        logger.info("=" * 60 + "\n")
+        
+        # First update Steam hours
+        logger.info("Updating Steam hours before snapshot...")
+        update_all_steam_hours_sync()
+        
+        # Then record snapshot
+        result = tracker.record_daily_snapshot()
+        
+        if result['success']:
+            logger.info(f"✓ Daily snapshot recorded successfully: {result.get('message')}")
+        else:
+            logger.error(f"✗ Daily snapshot failed: {result.get('error')}")
+    
+    # FIXED: Schedule at 00:05 EST (05:05 UTC) to ensure we're past midnight
+    schedule.every().day.at("05:05").do(job)
+    
+    def run_scheduler():
+        """Run the scheduler in a background thread"""
+        logger.info("Starting daily snapshot scheduler...")
+        logger.info("Schedule: 00:05 AM EST (05:05 UTC) daily")
+        logger.info(f"Next run: {schedule.next_run()}")
+        
+        while True:
+            try:
+                schedule.run_pending()
+                time.sleep(60)  # Check every minute
+            except Exception as e:
+                logger.error(f"Scheduler error: {e}")
+                logger.error(traceback.format_exc())
+                time.sleep(60)
+    
+    # Start scheduler in daemon thread
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    
+    logger.info("✓ Daily snapshot scheduler started")
+    return scheduler_thread
+
+# ==============================================================================
+# DATABASE HELPERS
+# ==============================================================================
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -110,32 +442,6 @@ def init_db():
         tag TEXT NOT NULL,
         FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
     );
-    CREATE TABLE IF NOT EXISTS daily_hours_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT NOT NULL UNIQUE,
-        total_hours REAL NOT NULL,
-        games_played INTEGER DEFAULT 0,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS daily_game_hours (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT NOT NULL,
-        game_id INTEGER NOT NULL,
-        game_title TEXT NOT NULL,
-        hours_played REAL NOT NULL,
-        cover_url TEXT,
-        FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE,
-        UNIQUE(date, game_id)
-    );
-    CREATE TABLE IF NOT EXISTS daily_tracker_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        date_recorded TEXT,
-        success INTEGER DEFAULT 0,
-        error_message TEXT,
-        games_updated INTEGER DEFAULT 0,
-        hours_recorded REAL DEFAULT 0
-    );
     ''')
     conn.commit()
     conn.close()
@@ -145,7 +451,17 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 30
 
+# Initialize database
 init_db()
+
+# Initialize daily hours tracker
+tracker = DailyHoursTracker(DB_PATH)
+tracker.create_tables()
+
+# Start the daily snapshot scheduler
+setup_daily_scheduler(tracker)
+
+logger.info("Application initialized successfully")
 
 # Authentication decorator
 from functools import wraps
@@ -157,7 +473,10 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Steam API helpers
+# ==============================================================================
+# STEAM API HELPERS
+# ==============================================================================
+
 def search_steam_games(query):
     """Search for games on Steam"""
     try:
@@ -364,338 +683,9 @@ def update_all_steam_hours_sync():
         logger.error(f"Error auto-updating Steam hours: {e}")
         return False
 
-def record_daily_hours():
-    """Record today's total hours played and sync achievements for recently played games"""
-    
-    # Acquire lock to prevent simultaneous execution
-    if not _record_lock.acquire(blocking=False):
-        logger.warning("record_daily_hours already running, skipping this call")
-        return False
-    
-    conn = None
-    try:
-        # Use EST timezone consistently
-        est = pytz.timezone('US/Eastern')
-        now_est = datetime.now(est)
-        today = now_est.date().isoformat()
-        
-        logger.info(f"=" * 60)
-        logger.info(f"Starting daily Steam hours update for {today}")
-        logger.info(f"EST time: {now_est}")
-        logger.info(f"=" * 60)
-        
-        # STEP 1: Import any NEW games from Steam library
-        if STEAM_API_KEY and STEAM_USER_ID:
-            try:
-                logger.info("Checking for new Steam games...")
-                games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={STEAM_USER_ID}&include_appinfo=1"
-                games_response = steam_api_call_with_rate_limit(games_url)
-                
-                if games_response.status_code == 200:
-                    games_data = games_response.json()
-                    steam_games = games_data.get('response', {}).get('games', [])
-                    
-                    conn = get_db()
-                    cur = conn.cursor()
-                    
-                    cur.execute('SELECT steam_app_id FROM games WHERE steam_app_id IS NOT NULL')
-                    existing_app_ids = set(row['steam_app_id'] for row in cur.fetchall())
-                    
-                    cur.execute('SELECT steam_app_id FROM steam_import_status WHERE error_message = "User excluded this game"')
-                    excluded_app_ids = set(row['steam_app_id'] for row in cur.fetchall())
-                    
-                    new_games_count = 0
-                    for game in steam_games:
-                        app_id = game.get('appid')
-                        if app_id not in existing_app_ids and app_id not in excluded_app_ids:
-                            title = game.get('name', f'App {app_id}')
-                            hours_played = round(game.get('playtime_forever', 0) / 60, 1) if game.get('playtime_forever', 0) > 0 else None
-                            cover_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
-                            
-                            cur.execute(
-                                """INSERT INTO games (title, platform, status, hours_played, steam_app_id, cover_url, rating, completion_date) 
-                                   VALUES (?,?,?,?,?,?,?,?)""",
-                                (title, 'PC', 'Playing', hours_played, app_id, cover_url, None, None)
-                            )
-                            
-                            cur.execute(
-                                'INSERT OR REPLACE INTO steam_import_status (steam_app_id, game_imported, achievements_imported) VALUES (?, 1, 1)',
-                                (app_id,)
-                            )
-                            new_games_count += 1
-                    
-                    conn.commit()
-                    
-                    if new_games_count > 0:
-                        logger.info(f"✓ Imported {new_games_count} new Steam games")
-                    else:
-                        logger.info("No new games to import")
-                    
-                    conn.close()
-                    conn = None
-            except Exception as e:
-                logger.error(f"Error importing new Steam games: {e}")
-        
-        # STEP 2: Update hours for ALL existing Steam games
-        logger.info("Updating hours for existing Steam games...")
-        update_all_steam_hours_sync()
-        
-        # STEP 3: Record the daily snapshot
-        total_hours = get_total_hours_played()
-        logger.info(f"Total hours played: {total_hours}")
-        
-        conn = get_db()
-        cur = conn.cursor()
-        
-        cur.execute('SELECT COUNT(*) as count FROM games WHERE hours_played IS NOT NULL AND hours_played > 0')
-        games_played = cur.fetchone()['count']
-        logger.info(f"Games with hours: {games_played}")
-        
-        # FIX: Use atomic INSERT OR REPLACE instead of check-then-act
-        logger.info(f"Recording daily hours for {today} (using atomic INSERT OR REPLACE)")
-        cur.execute('''
-            INSERT OR REPLACE INTO daily_hours_history (date, total_hours, games_played, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        ''', (today, total_hours, games_played))
-        
-        # Get games with hours to snapshot
-        cur.execute('''
-            SELECT id, title, hours_played, cover_url, steam_app_id
-            FROM games 
-            WHERE hours_played IS NOT NULL AND hours_played > 0
-            ORDER BY hours_played DESC
-        ''')
-        games = cur.fetchall()
-        logger.info(f"Snapshotting {len(games)} games")
-        
-        # Get yesterday's snapshot
-        yesterday = (now_est.date() - timedelta(days=1)).isoformat()
-        cur.execute('SELECT game_id, hours_played FROM daily_game_hours WHERE date = ?', (yesterday,))
-        yesterday_hours = {row['game_id']: row['hours_played'] for row in cur.fetchall()}
-        
-        # Delete today's existing snapshot
-        cur.execute('DELETE FROM daily_game_hours WHERE date = ?', (today,))
-        
-        games_played_today = []
-        
-        for game in games:
-            cur.execute('''
-                INSERT INTO daily_game_hours (date, game_id, game_title, hours_played, cover_url)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (today, game['id'], game['title'], game['hours_played'], game['cover_url']))
-            
-            prev_hours = yesterday_hours.get(game['id'], 0)
-            if game['hours_played'] > prev_hours and game['steam_app_id']:
-                games_played_today.append(game)
-        
-        conn.commit()
-        
-        # Sync achievements for games played today
-        achievements_synced = 0
-        if games_played_today and STEAM_API_KEY:
-            logger.info(f"Syncing achievements for {len(games_played_today)} games played today...")
-            for game in games_played_today:
-                try:
-                    logger.info(f"  Syncing achievements for {game['title']}...")
-                    achievements = get_steam_achievements(game['steam_app_id'])
-                    
-                    if achievements and len(achievements) > 0:
-                        cur.execute('DELETE FROM achievements WHERE game_id = ?', (game['id'],))
-                        
-                        for ach in achievements:
-                            cur.execute(
-                                'INSERT INTO achievements (game_id, title, description, date, unlocked, icon_url) VALUES (?,?,?,?,?,?)',
-                                (game['id'], ach.get('name'), ach.get('description'), 
-                                 ach.get('unlock_date'), ach.get('achieved', 0), ach.get('icon'))
-                            )
-                        
-                        conn.commit()
-                        achievements_synced += len(achievements)
-                        logger.info(f"  ✓ Synced {len(achievements)} achievements")
-                except Exception as e:
-                    logger.error(f"  ✗ Failed to sync achievements: {e}")
-        
-        # Log success
-        cur.execute('''
-            INSERT INTO daily_tracker_log (date_recorded, success, games_updated, hours_recorded)
-            VALUES (?, 1, ?, ?)
-        ''', (today, len(games), total_hours))
-        
-        conn.commit()
-        conn.close()
-        conn = None
-        
-        logger.info(f"=" * 60)
-        logger.info(f"✓ SUCCESS: Recorded daily hours for {today}")
-        logger.info(f"  Total hours: {total_hours}h")
-        logger.info(f"  Games tracked: {games_played}")
-        if games_played_today:
-            logger.info(f"  Games played today: {len(games_played_today)}")
-            logger.info(f"  Achievements synced: {achievements_synced}")
-        logger.info(f"=" * 60)
-        
-        return True
-        
-    except Exception as e:
-        error_msg = f"Error recording daily hours: {e}"
-        logger.error(f"=" * 60)
-        logger.error(f"❌ FAILED: {error_msg}")
-        logger.error(traceback.format_exc())
-        logger.error(f"=" * 60)
-        
-        # Log failure
-        try:
-            if conn is None:
-                conn = get_db()
-            cur = conn.cursor()
-            est = pytz.timezone('US/Eastern')
-            today = datetime.now(est).date().isoformat()
-            cur.execute('''
-                INSERT INTO daily_tracker_log (date_recorded, success, error_message)
-                VALUES (?, 0, ?)
-            ''', (today, str(e)[:500]))
-            conn.commit()
-            conn.close()
-        except Exception as log_error:
-            logger.error(f"Failed to log error: {log_error}")
-        
-        return False
-    finally:
-        # Always release the lock
-        _record_lock.release()
-
-def get_daily_hours_history(days=30):
-    """Get daily hours history for the last N days"""
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        
-        cur.execute('''
-            SELECT date, total_hours, games_played 
-            FROM daily_hours_history 
-            ORDER BY date DESC 
-            LIMIT ?
-        ''', (days,))
-        
-        history = [dict(row) for row in cur.fetchall()]
-        conn.close()
-        
-        history.sort(key=lambda x: x['date'])
-        return history
-        
-    except Exception as e:
-        logger.error(f"Error getting daily hours history: {e}")
-        return []
-
-@app.route('/api/excluded-games', methods=['GET'])
-@login_required
-def get_excluded_games():
-    """Get list of excluded Steam games"""
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        
-        cur.execute('''
-            SELECT steam_app_id, last_attempt 
-            FROM steam_import_status 
-            WHERE error_message = "User excluded this game"
-            ORDER BY last_attempt DESC
-        ''')
-        
-        excluded = [dict(row) for row in cur.fetchall()]
-        conn.close()
-        
-        return jsonify(excluded)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/excluded-games/<int:app_id>', methods=['DELETE'])
-@login_required
-def remove_from_excluded(app_id):
-    """Remove a game from the excluded list (allow re-import)"""
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        
-        cur.execute('''
-            DELETE FROM steam_import_status 
-            WHERE steam_app_id = ? AND error_message = "User excluded this game"
-        ''', (app_id,))
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'success': True, 'message': 'Game removed from exclusion list'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-def schedule_daily_tracking():
-    """Schedule daily hours tracking at 12:30 PM EST (17:30 UTC)"""
-    global _scheduler_initialized
-    
-    if _scheduler_initialized:
-        logger.warning("Scheduler already initialized, skipping")
-        return
-    
-    _scheduler_initialized = True
-    
-    try:
-        def job():
-            est = pytz.timezone('US/Eastern')
-            now = datetime.now(est)
-            logger.info(f"\n{'='*60}")
-            logger.info(f"SCHEDULED JOB TRIGGERED")
-            logger.info(f"Current EST time: {now}")
-            logger.info(f"{'='*60}\n")
-            record_daily_hours()
-        
-        # 17:30 UTC = 12:30 PM EST (safer than midnight)
-        schedule.every().day.at("17:30").do(job)
-        
-        def run_scheduler():
-            logger.info("Scheduler thread started")
-            while True:
-                try:
-                    schedule.run_pending()
-                    time.sleep(60)
-                except Exception as e:
-                    logger.error(f"Scheduler error: {e}")
-                    time.sleep(60)
-        
-        scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-        scheduler_thread.start()
-        
-        next_run = schedule.next_run()
-        logger.info("=" * 60)
-        logger.info("Daily hours tracking scheduler STARTED")
-        logger.info(f"Schedule: 12:30 PM EST daily (17:30 UTC)")
-        logger.info(f"Next run: {next_run}")
-        logger.info("=" * 60)
-        
-        # Check if we need to record today's data (with delay to avoid conflicts)
-        def delayed_check():
-            time.sleep(5)  # Wait 5 seconds for app to fully start
-            try:
-                est = pytz.timezone('US/Eastern')
-                today = datetime.now(est).date().isoformat()
-                
-                conn = get_db()
-                cur = conn.cursor()
-                cur.execute('SELECT id FROM daily_hours_history WHERE date = ?', (today,))
-                if not cur.fetchone():
-                    logger.info(f"No record for {today} found, running initial recording...")
-                    record_daily_hours()
-                else:
-                    logger.info(f"Record for {today} already exists")
-                conn.close()
-            except Exception as e:
-                logger.error(f"Error in delayed check: {e}")
-        
-        threading.Thread(target=delayed_check, daemon=True).start()
-        
-    except Exception as e:
-        logger.error(f"Failed to start scheduler: {e}")
-        logger.error(traceback.format_exc())
+# ==============================================================================
+# FLASK ROUTES
+# ==============================================================================
 
 # Routes
 @app.route('/')
@@ -722,6 +712,110 @@ def logout():
 @app.route('/api/auth/check')
 def check_auth():
     return jsonify({'logged_in': session.get('logged_in', False)})
+
+# ==============================================================================
+# DAILY SNAPSHOT ROUTES (NEW)
+# ==============================================================================
+
+@app.route('/api/daily-snapshots')
+def get_daily_snapshots():
+    """Get daily hours history"""
+    days = request.args.get('days', 30, type=int)
+    history = tracker.get_daily_history(days)
+    return jsonify(history)
+
+@app.route('/api/daily-snapshots/<date>')
+def get_daily_snapshot(date):
+    """Get games played on a specific date"""
+    try:
+        games = tracker.get_games_played_on_date(date)
+        return jsonify(games)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/daily-snapshots/record', methods=['POST'])
+@login_required
+def record_snapshot_now():
+    """Manually trigger a snapshot recording"""
+    # First update Steam hours
+    logger.info("Updating Steam hours before snapshot...")
+    update_all_steam_hours_sync()
+    
+    # Then record snapshot
+    result = tracker.record_daily_snapshot()
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 500
+
+@app.route('/api/daily-snapshots/status')
+@login_required
+def get_snapshot_status():
+    """Get status information about the daily snapshot system"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get last snapshot
+        cur.execute('SELECT * FROM daily_snapshots ORDER BY date DESC LIMIT 1')
+        last_snapshot = cur.fetchone()
+        
+        # Get total snapshots
+        cur.execute('SELECT COUNT(*) as count FROM daily_snapshots')
+        total_snapshots = cur.fetchone()['count']
+        
+        # Get snapshot for today
+        current_date = tracker.get_current_date_est().isoformat()
+        cur.execute('SELECT * FROM daily_snapshots WHERE date = ?', (current_date,))
+        today_snapshot = cur.fetchone()
+        
+        conn.close()
+        
+        utc_now = datetime.now(pytz.UTC)
+        est_now = utc_now.astimezone(tracker.est)
+        
+        return jsonify({
+            'utc_time': utc_now.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'est_time': est_now.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'current_date_est': current_date,
+            'last_snapshot': dict(last_snapshot) if last_snapshot else None,
+            'today_snapshot_exists': today_snapshot is not None,
+            'total_snapshots': total_snapshots,
+            'next_scheduled_run': str(schedule.next_run()) if schedule.jobs else 'No jobs scheduled',
+            'schedule_time': '00:05 AM EST (05:05 UTC) daily'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug/all-snapshots')
+@login_required
+def debug_all_snapshots():
+    """Debug endpoint to see all snapshots"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute('''
+            SELECT date, total_hours, games_played, created_at
+            FROM daily_snapshots
+            ORDER BY date DESC
+        ''')
+        snapshots = [dict(row) for row in cur.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            'snapshots': snapshots,
+            'count': len(snapshots)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
+# GAME ROUTES
+# ==============================================================================
 
 @app.route('/api/games/<int:game_id>/favorite', methods=['PUT'])
 @login_required
@@ -998,117 +1092,47 @@ def api_delete_top10(game_id):
     conn.close()
     return jsonify({'success': True})
 
-@app.route('/api/daily-game-hours/<date>')
-def api_daily_game_hours(date):
-    """Get per-game hours breakdown for a specific day"""
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        
-        cur.execute('''
-            SELECT game_id, game_title, hours_played, cover_url
-            FROM daily_game_hours
-            WHERE date = ?
-            ORDER BY hours_played DESC
-        ''', (date,))
-        
-        current_snapshot = [dict(r) for r in cur.fetchall()]
-        
-        if not current_snapshot:
-            conn.close()
-            return jsonify({'error': 'No data for this date'}), 404
-        
-        date_obj = datetime.strptime(date, '%Y-%m-%d')
-        prev_date = (date_obj - timedelta(days=1)).strftime('%Y-%m-%d')
-        
-        cur.execute('''
-            SELECT game_id, hours_played
-            FROM daily_game_hours
-            WHERE date = ?
-        ''', (prev_date,))
-        
-        prev_snapshot = {row['game_id']: row['hours_played'] for row in cur.fetchall()}
-        
-        result = []
-        for game in current_snapshot:
-            prev_hours = prev_snapshot.get(game['game_id'], game['hours_played'])
-            hours_this_day = round(game['hours_played'] - prev_hours, 1)
-            
-            if hours_this_day > 0:
-                result.append({
-                    'game_id': game['game_id'],
-                    'game_title': game['game_title'],
-                    'total_hours': game['hours_played'],
-                    'hours_this_day': hours_this_day,
-                    'cover_url': game['cover_url']
-                })
-        
-        result.sort(key=lambda x: x['hours_this_day'], reverse=True)
-        
-        conn.close()
-        return jsonify(result)
-        
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/tracker-logs')
+@app.route('/api/excluded-games', methods=['GET'])
 @login_required
-def api_tracker_logs():
-    """View tracker execution logs"""
+def get_excluded_games():
+    """Get list of excluded Steam games"""
     try:
         conn = get_db()
         cur = conn.cursor()
         
-        # Check if table exists
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_tracker_log'")
-        if not cur.fetchone():
-            conn.close()
-            return jsonify({'error': 'daily_tracker_log table does not exist yet'}), 404
-        
         cur.execute('''
-            SELECT * FROM daily_tracker_log 
-            ORDER BY timestamp DESC 
-            LIMIT 30
+            SELECT steam_app_id, last_attempt 
+            FROM steam_import_status 
+            WHERE error_message = "User excluded this game"
+            ORDER BY last_attempt DESC
         ''')
-        logs = [dict(row) for row in cur.fetchall()]
+        
+        excluded = [dict(row) for row in cur.fetchall()]
         conn.close()
-        return jsonify(logs)
+        
+        return jsonify(excluded)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/scheduler-status')
+@app.route('/api/excluded-games/<int:app_id>', methods=['DELETE'])
 @login_required
-def api_scheduler_status():
-    """Check scheduler status"""
+def remove_from_excluded(app_id):
+    """Remove a game from the excluded list (allow re-import)"""
     try:
-        import schedule
-        jobs = schedule.jobs
+        conn = get_db()
+        cur = conn.cursor()
         
-        est = pytz.timezone('US/Eastern')
-        now = datetime.now(est)
+        cur.execute('''
+            DELETE FROM steam_import_status 
+            WHERE steam_app_id = ? AND error_message = "User excluded this game"
+        ''', (app_id,))
         
-        return jsonify({
-            'current_time_est': str(now),
-            'jobs_scheduled': len(jobs),
-            'next_run_utc': str(jobs[0].next_run) if jobs else None,
-            'schedule_time': '12:30 PM EST (17:30 UTC) daily'
-        })
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Game removed from exclusion list'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/record-daily-hours-now', methods=['POST'])
-@login_required
-def api_record_daily_hours_now():
-    """Manually trigger daily hours recording"""
-    try:
-        success = record_daily_hours()
-        if success:
-            return jsonify({'success': True, 'message': 'Daily hours recorded successfully'})
-        else:
-            return jsonify({'success': False, 'error': 'Failed to record daily hours'}), 500
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
     
 @app.route('/api/games')
 def api_games():
@@ -1428,11 +1452,7 @@ def update_all_games_from_steam():
                 continue
         
         conn.commit()
-        
-        try:
-            record_daily_hours()
-        except Exception:
-            pass
+        conn.close()
         
         return jsonify({
             'success': True,
@@ -1632,7 +1652,8 @@ def api_stats():
         completion_rate = round((completed / total * 100), 1) if total > 0 else 0
         avg_hours_per_game = round(total_hours / total, 1) if total > 0 else 0
         
-        daily_hours_history = get_daily_hours_history(30)
+        # USE NEW TRACKER FOR DAILY HOURS
+        daily_hours_history = tracker.get_daily_history(30)
         
         return jsonify({
             'total_games': total,
@@ -1678,7 +1699,6 @@ def api_completionist_achievements(game_id):
         conn.close()
         return jsonify({'id': new_id}), 201
     else:
-        # FIX: Don't use f-string for SQL ORDER BY - prevents SQL injection
         sort_by = request.args.get('sort', 'date')
         
         if sort_by == 'difficulty':
@@ -1733,7 +1753,6 @@ def api_all_completionist():
         sort_by = request.args.get('sort', 'date')
         filter_status = request.args.get('status', 'all')
         
-        # FIX: Don't use f-string for SQL - prevents injection
         if sort_by == 'difficulty':
             order_clause = 'ca.difficulty DESC'
         else:
@@ -1769,7 +1788,5 @@ def api_all_completionist():
         if conn:
             conn.close()
 
-schedule_daily_tracking()
-
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=False)

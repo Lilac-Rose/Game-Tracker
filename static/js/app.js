@@ -1261,6 +1261,10 @@ async function loadStats() {
   const res = await fetch('/api/stats');
   const stats = await res.json();
   
+  console.log('Stats loaded, daily hours count:', stats.daily_hours_history.length);
+  console.log('Date range:', stats.daily_hours_history[0]?.date, 'to', stats.daily_hours_history[stats.daily_hours_history.length - 1]?.date);
+  
+
   document.getElementById('stat-total').textContent = stats.total_games;
   document.getElementById('stat-completed').textContent = stats.completed_games;
   document.getElementById('stat-hours').textContent = stats.total_hours + 'h';
@@ -1325,16 +1329,32 @@ function renderDailyHoursChart(dailyHours) {
   const chartContainer = document.getElementById('daily-hours-chart');
   
   if (!dailyHours || dailyHours.length === 0) {
-    chartContainer.innerHTML = '<div class="empty-state">No daily hours data yet. Data will be recorded daily at 12 AM EST.</div>';
+    chartContainer.innerHTML = '<div class="empty-state">No daily hours data yet. Data is recorded automatically at midnight EST each day.</div>';
     return;
   }
+
+  // Format date nicely
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const formatDateLong = (dateStr) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  };
   
-  // Calculate stats for display
+  // Calculate stats
   const firstDay = dailyHours[0];
   const lastDay = dailyHours[dailyHours.length - 1];
   const totalDays = dailyHours.length;
   
-  // Calculate actual growth from first recorded day to today
+  // Calculate growth
   const growth = lastDay.total_hours - firstDay.total_hours;
   const dailyAvg = totalDays > 1 ? growth / (totalDays - 1) : 0;
   
@@ -1343,37 +1363,24 @@ function renderDailyHoursChart(dailyHours) {
   const maxHours = Math.max(...allHours);
   const minHours = Math.min(...allHours);
   const range = maxHours - minHours || 1;
-  const padding = range * 0.1; // 10% padding
+  const padding = range * 0.1;
   
-  // Format date nicely
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-  
-  // Format date with year for tooltip
-  const formatDateLong = (dateStr) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  };
-  
-  // Create SVG line chart
-  const width = 100; // percentage
-  const height = 200; // pixels
-  const chartWidth = chartContainer.offsetWidth || 800;
-  const pointSpacing = chartWidth / Math.max(totalDays - 1, 1);
-  
-  // Generate SVG path for the line
+  // Create points for the line chart
   const points = dailyHours.map((day, index) => {
     const x = (index / Math.max(totalDays - 1, 1)) * 100;
     const normalizedValue = (day.total_hours - (minHours - padding)) / (range + padding * 2);
-    const y = 100 - (normalizedValue * 90); // Use 90% of height, leave 10% margin
-    return { x, y, date: day.date, hours: day.total_hours, games: day.games_played };
+    const y = 100 - (normalizedValue * 90);
+    return { 
+      x, 
+      y, 
+      date: day.date, 
+      hours: day.total_hours,
+      hoursAdded: day.hours_added || 0,
+      games: day.games_played 
+    };
   });
   
   const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x},${p.y}`).join(' ');
-  
-  // Create gradient fill under the line
   const gradientPath = `M 0,100 L ${points[0].x},${points[0].y} ${pathData.substring(1)} L 100,100 Z`;
   
   chartContainer.innerHTML = `
@@ -1381,7 +1388,7 @@ function renderDailyHoursChart(dailyHours) {
       <h4>Total Hours Tracked (${totalDays} day${totalDays !== 1 ? 's' : ''})</h4>
       <div class="chart-stats">
         <span class="chart-stat">
-          <span class="stat-label">Growth:</span>
+          <span class="stat-label">Total Growth:</span>
           <span class="stat-value ${growth > 0 ? 'positive' : 'neutral'}">${growth > 0 ? '+' : ''}${growth.toFixed(1)}h</span>
         </span>
         <span class="chart-stat">
@@ -1395,9 +1402,8 @@ function renderDailyHoursChart(dailyHours) {
       </div>
     </div>
     
-    <div class="line-chart-container" style="position: relative; width: 100%; height: ${height}px; margin: 20px 0;">
+    <div class="line-chart-container" style="position: relative; width: 100%; height: 200px; margin: 20px 0;">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;">
-        <!-- Gradient fill under line -->
         <defs>
           <linearGradient id="lineGradient" x1="0%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" style="stop-color:var(--accent);stop-opacity:0.3" />
@@ -1405,8 +1411,6 @@ function renderDailyHoursChart(dailyHours) {
           </linearGradient>
         </defs>
         <path d="${gradientPath}" fill="url(#lineGradient)" />
-        
-        <!-- The main line -->
         <path d="${pathData}" 
               fill="none" 
               stroke="var(--accent)" 
@@ -1415,57 +1419,48 @@ function renderDailyHoursChart(dailyHours) {
               style="filter: drop-shadow(0 0 2px var(--accent));" />
       </svg>
       
-      <!-- Data points overlay -->
       <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
-        ${points.map((point, index) => {
-          const isToday = index === points.length - 1;
-          const isFirst = index === 0;
-          const isNearEnd = point.x > 85; // Points in the last 15% of the chart
-          
-          return `
-            <div class="chart-point" 
-                 data-date="${point.date}"
-                 data-index="${index}"
-                 data-hours="${point.hours.toFixed(1)}"
-                 style="
-                   position: absolute;
-                   left: ${point.x}%;
-                   top: ${point.y}%;
-                   transform: translate(-50%, -50%);
-                   width: 8px;
-                   height: 8px;
-                   background: var(--accent);
-                   border: 2px solid var(--bg-dark);
-                   border-radius: 50%;
-                   cursor: pointer;
-                   z-index: 10;
-                   transition: all 0.2s ease;
-                 "
-                 title="${formatDateLong(point.date)}: ${point.hours.toFixed(1)}h total">
-            </div>
-          `;
-        }).join('')}
+        ${points.map((point, index) => `
+          <div class="chart-point" 
+               data-date="${point.date}"
+               data-hours="${point.hours.toFixed(1)}"
+               data-hours-added="${point.hoursAdded.toFixed(1)}"
+               style="
+                 position: absolute;
+                 left: ${point.x}%;
+                 top: ${point.y}%;
+                 transform: translate(-50%, -50%);
+                 width: 8px;
+                 height: 8px;
+                 background: var(--accent);
+                 border: 2px solid var(--bg-dark);
+                 border-radius: 50%;
+                 cursor: pointer;
+                 z-index: 10;
+                 transition: all 0.2s ease;
+               "
+               title="${formatDateLong(point.date)}: ${point.hours.toFixed(1)}h total${point.hoursAdded > 0 ? ` (+${point.hoursAdded.toFixed(1)}h)` : ''}">
+          </div>
+        `).join('')}
       </div>
     </div>
     
-    <!-- X-axis labels -->
-    <div class="chart-x-axis">
-      <span>${formatDate(firstDay.date)}</span>
-      <span style="position: absolute; left: 50%; transform: translateX(-50%);">${totalDays} days</span>
-      <span>${formatDate(lastDay.date)}</span>
+    <div class="chart-x-axis" style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 10px; font-size: 12px; color: var(--text-muted);">
+      <span style="text-align: left;">${formatDate(firstDay.date)}</span>
+      <span style="text-align: center; padding: 0 20px;">${totalDays} day${totalDays !== 1 ? 's' : ''}</span>
+      <span style="text-align: right;">${formatDate(lastDay.date)}</span>
     </div>
     
     <div class="chart-footer">
-      <small>Tracking started ${formatDate(firstDay.date)} • Auto-updates daily at 12 PM EST • Click points for game breakdown</small>
+      <small>Recording started ${formatDate(firstDay.date)} • Auto-updates daily at midnight EST • Click points to see games played that day</small>
     </div>
   `;
   
-  // Now that the chart is rendered, we can set up the tooltip
+  // Setup interactions
   setupChartTooltips(chartContainer, points, formatDateLong);
 }
 
 function setupChartTooltips(chartContainer, points, formatDateLong) {
-  // Create tooltip if it doesn't exist
   let chartTooltip = document.getElementById('chart-tooltip');
   if (!chartTooltip) {
     chartTooltip = document.createElement('div');
@@ -1484,116 +1479,69 @@ function setupChartTooltips(chartContainer, points, formatDateLong) {
       box-shadow: var(--shadow);
       max-width: 200px;
       text-align: center;
-      transition: opacity 0.2s ease;
     `;
     document.body.appendChild(chartTooltip);
   }
   
-  // Get the line chart container for mouse tracking
   const lineChartContainer = chartContainer.querySelector('.line-chart-container');
   
-  // Function to setup point events (called after chart is rendered)
-  const setupPointEvents = () => {
-    // Use event delegation on the chart container to handle dynamically added points
-    if (lineChartContainer) {
-      // Remove existing listeners first
-      lineChartContainer.removeEventListener('click', handlePointClick);
-      lineChartContainer.addEventListener('click', handlePointClick);
-      
-      // Also handle mouse events for tooltips
-      lineChartContainer.removeEventListener('mouseenter', handleMouseEnter);
-      lineChartContainer.removeEventListener('mousemove', handleMouseMove);
-      lineChartContainer.removeEventListener('mouseleave', handleMouseLeave);
-      
-      lineChartContainer.addEventListener('mouseenter', handleMouseEnter);
-      lineChartContainer.addEventListener('mousemove', handleMouseMove);
-      lineChartContainer.addEventListener('mouseleave', handleMouseLeave);
-    }
-  };
-  
-  // Event handlers
-  const handlePointClick = async (e) => {
-    const point = e.target.closest('.chart-point');
-    if (point && point.dataset.date) {
-      e.stopPropagation();
-      await showDailyBreakdown(point.dataset.date);
-    }
-  };
-  
-  const handleMouseEnter = (e) => {
-    const point = e.target.closest('.chart-point');
-    if (point) {
-      const date = point.dataset.date;
-      const hours = point.dataset.hours;
-      
-      // Get point position relative to viewport
-      const pointRect = point.getBoundingClientRect();
-      
-      // Calculate tooltip position
-      const tooltipX = pointRect.left + (pointRect.width / 2);
-      const tooltipY = pointRect.top - 10;
-      
-      // Set tooltip content and position
-      chartTooltip.textContent = `${formatDateLong(date)}: ${parseFloat(hours).toFixed(1)}h`;
-      chartTooltip.style.left = `${tooltipX}px`;
-      chartTooltip.style.top = `${tooltipY}px`;
-      chartTooltip.style.transform = 'translate(-50%, -100%)';
-      chartTooltip.style.display = 'block';
-      
-      // Adjust if tooltip would go off screen
-      const tooltipRect = chartTooltip.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      
-      if (tooltipRect.left < 10) {
-        chartTooltip.style.left = `${Math.max(10, tooltipRect.left)}px`;
-        chartTooltip.style.transform = 'translate(0, -100%)';
-      } else if (tooltipRect.right > viewportWidth - 10) {
-        chartTooltip.style.left = `${Math.min(viewportWidth - tooltipRect.width - 10, tooltipRect.left)}px`;
-        chartTooltip.style.transform = 'translate(0, -100%)';
+  if (lineChartContainer) {
+    lineChartContainer.addEventListener('click', async (e) => {
+      const point = e.target.closest('.chart-point');
+      if (point && point.dataset.date) {
+        await showDailyBreakdown(point.dataset.date);
       }
-      
-      point.style.transform = 'translate(-50%, -50%) scale(1.5)';
-      point.style.boxShadow = '0 0 12px var(--accent)';
-      point.style.zIndex = '20';
-    }
-  };
-  
-  const handleMouseMove = (e) => {
-    if (chartTooltip.style.display === 'block') {
-      chartTooltip.style.left = `${e.clientX}px`;
-      chartTooltip.style.top = `${e.clientY - 20}px`;
-      chartTooltip.style.transform = 'translate(-50%, -100%)';
-    }
-  };
-  
-  const handleMouseLeave = () => {
-    chartTooltip.style.display = 'none';
-    const points = chartContainer.querySelectorAll('.chart-point');
-    points.forEach(point => {
-      point.style.transform = 'translate(-50%, -50%) scale(1)';
-      point.style.boxShadow = 'none';
-      point.style.zIndex = '10';
     });
-  };
-  
-  // Wait a bit for the chart to fully render, then setup events
-  setTimeout(() => {
-    setupPointEvents();
-  }, 100);
+    
+    lineChartContainer.addEventListener('mouseenter', (e) => {
+      const point = e.target.closest('.chart-point');
+      if (point) {
+        const date = point.dataset.date;
+        const hours = point.dataset.hours;
+        const hoursAdded = point.dataset.hoursAdded;
+        
+        const pointRect = point.getBoundingClientRect();
+        const tooltipX = pointRect.left + (pointRect.width / 2);
+        const tooltipY = pointRect.top - 10;
+        
+        let tooltipText = `${formatDateLong(date)}: ${hours}h`;
+        if (parseFloat(hoursAdded) > 0) {
+          tooltipText += ` (+${hoursAdded}h)`;
+        }
+        
+        chartTooltip.textContent = tooltipText;
+        chartTooltip.style.left = `${tooltipX}px`;
+        chartTooltip.style.top = `${tooltipY}px`;
+        chartTooltip.style.transform = 'translate(-50%, -100%)';
+        chartTooltip.style.display = 'block';
+        
+        point.style.transform = 'translate(-50%, -50%) scale(1.5)';
+        point.style.boxShadow = '0 0 12px var(--accent)';
+        point.style.zIndex = '20';
+      }
+    }, true);
+    
+    lineChartContainer.addEventListener('mouseleave', () => {
+      chartTooltip.style.display = 'none';
+      const points = chartContainer.querySelectorAll('.chart-point');
+      points.forEach(point => {
+        point.style.transform = 'translate(-50%, -50%) scale(1)';
+        point.style.boxShadow = 'none';
+        point.style.zIndex = '10';
+      });
+    }, true);
+  }
 }
 
 async function showDailyBreakdown(date) {
-  // First, ensure we're in the stats tab
   const statsTab = document.getElementById('tab-stats');
   if (!statsTab.classList.contains('active')) {
-    // Switch to stats tab if we're not there
     document.querySelector('[data-tab="stats"]').click();
-    await new Promise(resolve => setTimeout(resolve, 100)); // Wait for tab switch
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
   
   let breakdownDiv = document.getElementById('daily-breakdown');
 
-  // Create the breakdown div if it doesn't exist
   if (!breakdownDiv) {
     breakdownDiv = document.createElement('div');
     breakdownDiv.id = 'daily-breakdown';
@@ -1605,7 +1553,6 @@ async function showDailyBreakdown(date) {
       return;
     }
     
-    // Insert after the chart container
     chartContainer.parentNode.insertBefore(breakdownDiv, chartContainer.nextSibling);
   }
   
@@ -1613,14 +1560,41 @@ async function showDailyBreakdown(date) {
   breakdownDiv.innerHTML = '<div class="loading">Loading game breakdown...</div>';
   
   try {
-    const res = await fetch(`/api/daily-game-hours/${date}`);
+    const res = await fetch(`/api/daily-snapshots/${date}`);
     
     if (!res.ok) {
-      breakdownDiv.innerHTML = '<div class="error">No detailed game data available for this date.</div>';
+      breakdownDiv.innerHTML = '<div class="error">No game data available for this date.</div>';
       return;
     }
     
     const games = await res.json();
+    
+    // ✅ NEW: Check if this is the first day
+    if (games.length === 1 && games[0].is_first_day) {
+      const formatDate = (dateStr) => {
+        const date = new Date(dateStr + 'T00:00:00');
+        return date.toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+      };
+      
+      breakdownDiv.innerHTML = `
+        <div class="breakdown-header">
+          <h4>${formatDate(games[0].date)}</h4>
+          <p class="breakdown-summary">📊 Tracking started on this day</p>
+          <button class="btn small secondary" onclick="hideDailyBreakdown()">Close</button>
+        </div>
+        <div class="empty-state" style="padding: 40px 20px;">
+          <div style="font-size: 48px; margin-bottom: 16px;">🎮</div>
+          <p style="font-size: 16px; margin-bottom: 8px;"><strong>Daily tracking begins!</strong></p>
+          <p style="color: var(--text-muted);">This is the first snapshot recorded. Check back tomorrow to see your daily progress!</p>
+        </div>
+      `;
+      return;
+    }
     
     if (games.length === 0) {
       breakdownDiv.innerHTML = '<div class="empty-state">No games played on this day</div>';
@@ -1628,61 +1602,46 @@ async function showDailyBreakdown(date) {
     }
     
     const formatDate = (dateStr) => {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const date = new Date(dateStr + 'T00:00:00');
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
     };
     
-    // Helper function to convert decimal hours to hours and minutes with proper pluralization
-    const formatHours = (hoursDecimal) => {
-      const hours = Math.floor(hoursDecimal);
-      const minutes = Math.round((hoursDecimal - hours) * 60);
+    const formatHours = (hours) => {
+      const h = Math.floor(hours);
+      const m = Math.round((hours - h) * 60);
       
-      // Handle edge cases
-      if (hours === 0 && minutes === 0) {
-        return '0 minutes';
-      }
-      
-      const hourText = hours === 1 ? 'hour' : 'hours';
-      const minuteText = minutes === 1 ? 'minute' : 'minutes';
-      
-      if (hours === 0) {
-        return `${minutes} ${minuteText}`;
-      } else if (minutes === 0) {
-        return `${hours} ${hourText}`;
-      } else {
-        return `${hours} ${hourText} ${minutes} ${minuteText}`;
-      }
+      if (h === 0 && m === 0) return '0 minutes';
+      if (h === 0) return `${m} minute${m !== 1 ? 's' : ''}`;
+      if (m === 0) return `${h} hour${h !== 1 ? 's' : ''}`;
+      return `${h} hour${h !== 1 ? 's' : ''} ${m} minute${m !== 1 ? 's' : ''}`;
     };
     
-    // Calculate total hours for the day and format it
-    const totalHoursThisDay = games.reduce((sum, g) => sum + g.hours_this_day, 0);
-    const formattedTotalHours = formatHours(totalHoursThisDay);
+    const totalHoursAdded = games.reduce((sum, g) => sum + g.hours_added, 0);
     
     breakdownDiv.innerHTML = `
       <div class="breakdown-header">
         <h4>Games Played on ${formatDate(date)}</h4>
-        <p class="breakdown-summary">${games.length} game${games.length !== 1 ? 's' : ''} • ${formattedTotalHours} played this day</p>
+        <p class="breakdown-summary">${games.length} game${games.length !== 1 ? 's' : ''} • ${formatHours(totalHoursAdded)} played this day</p>
         <button class="btn small secondary" onclick="hideDailyBreakdown()">Close</button>
       </div>
       <div class="breakdown-list">
-        ${games.map((game, index) => {
-          // Format the hours for this specific game
-          const hoursThisDayFormatted = formatHours(game.hours_this_day);
-          const totalHoursFormatted = formatHours(game.total_hours);
-          
-          return `
-            <div class="breakdown-game-item" style="animation-delay: ${0.1 + index * 0.05}s">
-              ${game.cover_url ? `<img src="${game.cover_url}" class="breakdown-game-cover" alt="${game.game_title}" />` : ''}
-              <div class="breakdown-game-info">
-                <div class="breakdown-game-title">${game.game_title}</div>
-                <div class="breakdown-game-hours">
-                  <span class="hours-this-day">+${hoursThisDayFormatted} played this day</span>
-                  <span class="total-hours">${totalHoursFormatted} total by this date</span>
-                </div>
+        ${games.map((game, index) => `
+          <div class="breakdown-game-item" style="animation-delay: ${0.1 + index * 0.05}s">
+            ${game.cover_url ? `<img src="${game.cover_url}" class="breakdown-game-cover" alt="${game.game_title}" />` : ''}
+            <div class="breakdown-game-info">
+              <div class="breakdown-game-title">${game.game_title}</div>
+              <div class="breakdown-game-hours">
+                <span class="hours-this-day">+${formatHours(game.hours_added)} played this day</span>
+                <span class="total-hours">${formatHours(game.total_hours)} total by this date</span>
               </div>
             </div>
-          `;
-        }).join('')}
+          </div>
+        `).join('')}
       </div>
     `;
     
@@ -2059,7 +2018,7 @@ document.getElementById('cleanup-images')?.addEventListener('click', async () =>
 });
 
 document.getElementById('record-daily-now')?.addEventListener('click', async () => {
-  if (!confirm('This will update all Steam games and record today\'s hours. Continue?')) return;
+  if (!confirm('Record a daily snapshot right now? This will capture current game hours.')) return;
   
   const btn = document.getElementById('record-daily-now');
   const originalText = btn.textContent;
@@ -2067,16 +2026,14 @@ document.getElementById('record-daily-now')?.addEventListener('click', async () 
   btn.disabled = true;
   
   try {
-    const res = await fetch('/api/record-daily-hours-now', { method: 'POST' });
+    const res = await fetch('/api/daily-snapshots/record', { method: 'POST' });
     const result = await res.json();
     
     const resultDiv = document.getElementById('admin-tools-result');
     if (result.success) {
-      resultDiv.innerHTML = `<div class="success">✓ ${result.message} - Refresh stats tab to see updated data</div>`;
-      // Refresh stats if we're on that tab
-      if (document.getElementById('tab-stats').classList.contains('active')) {
-        setTimeout(() => loadStats(), 1000);
-      }
+      resultDiv.innerHTML = `<div class="success">✓ ${result.message}</div>`;
+      // Refresh stats
+      setTimeout(() => loadStats(), 1000);
     } else {
       resultDiv.innerHTML = `<div class="error">❌ ${result.error}</div>`;
     }
